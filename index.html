@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low-Code Python Script Runner</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="scripts.js" defer></script> <!-- Link to the external JavaScript file -->
+</head>
+
+<body class="bg-gray-100 min-h-screen flex flex-col">
+
+    <!-- Header Toolbar -->
+    <header class="bg-blue-600 text-white p-4 flex justify-between items-center shadow-md">
+        <h1 class="text-xl font-semibold">Python Script Runner</h1>
+        <div class="flex space-x-4">
+            <!-- Specify a target file to operate on -->
+            
+            <!-- Load Button with SVG -->
+            <button id="loadConfig"
+                class="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-md flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+
+            <!-- Save Button with SVG -->
+            <button id="saveConfig"
+                class="bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-full shadow-md flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 7v14a2 2 0 002 2h14a2 2 0 002-2V7m-3-4H9l-2 2H3" />
+                </svg>
+            </button>
+
+            <!-- Play Button with SVG -->
+            <button id="playAll"
+                class="bg-green-500 hover:bg-green-600 text-white p-2 rounded-full shadow-md flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M14.752 11.168l4.803 3.336a1 1 0 000-1.664l-4.803 3.336M8 5v14l11-7L8 5z" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex-grow p-6">
+        <div class="max-w-3xl mx-auto">
+            <!-- List of Scripts -->
+            <ul id="scriptList" class="space-y-4">
+                <!-- Scripts will be dynamically added here -->
+            </ul>
+            <!-- Button to Add a New Step -->
+            <div class="flex justify-center mt-4">
+                <button id="add-global-step" class="p-2 bg-green-500 text-white rounded-full"
+                    onclick="createScriptEntry()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 4v16m8-8H4" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="console-toolbar" id="consoleToolbar">
+        <div class="console-content" id="consoleContent">
+            <p>No messages yet.</p>
+        </div>
+        <div class="resize-handle" id="resizeHandle"></div>
+    </div>
+</body>
+
+</html>
