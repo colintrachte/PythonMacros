@@ -1,4 +1,4 @@
-import os
+import os, logging
 import tkinter as tk
 from tkinter import filedialog, messagebox, Listbox, Scrollbar, simpledialog, Toplevel, Label
 import importlib.util
@@ -128,6 +128,33 @@ def convert_to_klipper_format(lines):
             converted_lines.append(line + '\n')
     return converted_lines
 
+def add_laser_header_footer(lines):
+    """
+    Add laser-specific header and footer to the G-code file.
+    """
+    header = ['HOME_PRINTER\n', 'GRAB_LASER\n']
+    footer = ['SET_PIN PIN=laser VALUE=0\n', 'HOME_XY\n', 'TOOL_DROPOFF\n']
+    return header + lines + footer
+
+def modify_laser_gcode(lines):
+    """
+    Modify G-code to add or replace commands related to laser control.
+    - After any line with `G01 Z0.0000`, add `SET_PIN PIN=laser VALUE=0.1`.
+    - Replace any line with `G01 Z10.0000` with `SET_PIN PIN=laser VALUE=0.01`.
+    """
+    modified_lines = []
+    for line in lines:
+        # Add command after `G01 Z0.0000`
+        if line.strip() == "G01 Z0.0000":
+            modified_lines.append(line)
+            modified_lines.append("SET_PIN PIN=laser VALUE=0.1\n")
+        # Replace `G01 Z10.0000`
+        elif line.strip() == "G01 Z10.0000":
+            modified_lines.append("SET_PIN PIN=laser VALUE=0.01\n")
+        else:
+            modified_lines.append(line)
+    return modified_lines
+
 # GUI Setup
 
 class GCodeEditorGUI:
@@ -166,13 +193,16 @@ class GCodeEditorGUI:
 
     def load_default_steps(self):
         """Load default steps."""
+
+        # Use default steps if no saved configuration is found
         default_steps = [
             ("Remove Old Header", remove_before_M106),
             ("Add Header", add_header),
             ("Insert Before G1 Z", insert_before_first_g1z),
             ("Remove After M107", remove_after_m107),
             ("Add Footer", add_footer),
-            ("Convert to Klipper Format", convert_to_klipper_format),  # New Step
+            ("Add Laser Header and Footer", add_laser_header_footer),
+            ("Modify Laser G-code", modify_laser_gcode),
         ]
         for desc, func in default_steps:
             self.processor.add_step(desc, func)
@@ -223,16 +253,15 @@ class GCodeEditorGUI:
 
     def save_steps(self):
         """Save steps to a file."""
-        filename = filedialog.asksaveasfilename(defaultextension=".py", filetypes=[("Python Files", "*.py")])
-        if filename:
-            self.processor.save_steps(filename)
+        filename = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        #if filename:
+            #self.processor.save_steps(filename)
 
     def load_steps(self):
         """Load steps from a file."""
-        filename = filedialog.askopenfilename(filetypes=[("Python Files", "*.py")])
-        if filename:
-            self.processor.load_steps(filename)
-            self.refresh_listbox()
+        filename = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        #if filename:
+            #self.processor.load_steps(filename)
 
 # Main
 
