@@ -160,17 +160,15 @@ def modify_laser_gcode(lines):
     modified_lines = []
     for line in lines:
         # Add command after `G01 Z0.0000`
-        if line.strip() == "G1 Z0.0000":
+        if line.strip() == "G1 Z0.00":
             modified_lines.append(line)
             modified_lines.append("SET_PIN PIN=laser VALUE=0.2\n")
         # Replace `G01 Z10.0000`
-        elif line.strip() == "G1 Z1.0000":
+        elif line.strip() == "G1 Z1.00":
             modified_lines.append("SET_PIN PIN=laser VALUE=0\n")
         else:
             modified_lines.append(line)
     return modified_lines
-
-
 
 # GUI Setup
 
