@@ -2,7 +2,7 @@ import os, logging
 import tkinter as tk
 from tkinter import filedialog, messagebox, Listbox, Scrollbar, simpledialog, Toplevel, Label
 import importlib.util
-import inspect
+import inspect, re
 
 class GCodeProcessor:
     def __init__(self):
@@ -73,10 +73,25 @@ class GCodeProcessor:
             messagebox.showerror("Error", f"Failed to load steps: {e}")
 
 # Helper Functions
+def convert_g01_g00_2decimals(lines):
+    """Convert G01/G00 to G1 and round decimals to two places."""
+    new_lines = []
+    for line in lines:
+        # Use regex to replace G00 and G01 with G1
+        modified_line = re.sub(r'\bG0[01]\b', 'G1', line)
+
+        # Use regex to find all numbers with decimals and round them to two places
+        modified_line = re.sub(
+            r'([A-Z])(-?\d+\.\d+)',  # Match letter followed by a decimal number
+            lambda m: f"{m.group(1)}{float(m.group(2)):.2f}", 
+            modified_line
+        )
+        new_lines.append(modified_line)
+    return new_lines
 
 def remove_before_M106(lines):
     """Remove lines up to the first M106."""
-    start_index = next((i for i, line in enumerate(lines) if 'M106' in line), -1)
+    start_index = next((i for i, line in enumerate(lines) if 'M03' in line), -1)
     return lines[start_index + 1:] if start_index != -1 else lines
 
 def add_header(lines):
@@ -145,15 +160,17 @@ def modify_laser_gcode(lines):
     modified_lines = []
     for line in lines:
         # Add command after `G01 Z0.0000`
-        if line.strip() == "G01 Z0.0000":
+        if line.strip() == "G1 Z0.0000":
             modified_lines.append(line)
-            modified_lines.append("SET_PIN PIN=laser VALUE=0.1\n")
+            modified_lines.append("SET_PIN PIN=laser VALUE=0.2\n")
         # Replace `G01 Z10.0000`
-        elif line.strip() == "G01 Z10.0000":
-            modified_lines.append("SET_PIN PIN=laser VALUE=0.01\n")
+        elif line.strip() == "G1 Z1.0000":
+            modified_lines.append("SET_PIN PIN=laser VALUE=0\n")
         else:
             modified_lines.append(line)
     return modified_lines
+
+
 
 # GUI Setup
 
@@ -201,6 +218,7 @@ class GCodeEditorGUI:
             ("Insert Before G1 Z", insert_before_first_g1z),
             ("Remove After M107", remove_after_m107),
             ("Add Footer", add_footer),
+            ("convert_g01_g00_2decimals",convert_g01_g00_2decimals),
             ("Add Laser Header and Footer", add_laser_header_footer),
             ("Modify Laser G-code", modify_laser_gcode),
         ]
