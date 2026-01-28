@@ -1,3 +1,65 @@
+/* Modern UI Overrides */
+:root {
+    --accent: #3b82f6;
+    --success: #22c55e;
+    --danger: #ef4444;
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Glassmorphism for the Modal */
+#selectionModal {
+    backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease;
+}
+
+/* Hide scrollbars for a cleaner look but keep functionality */
+.modal-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.modal-list::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+/* Console Styling */
+.console-toolbar {
+    background: #0f172a;
+    /* Slate 900 */
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.console-content p {
+    margin-bottom: 4px;
+    border-left: 2px solid transparent;
+    padding-left: 8px;
+}
+
+.console-success {
+    border-left-color: var(--success) !important;
+    color: #86efac;
+}
+
+.console-error {
+    border-left-color: var(--danger) !important;
+    color: #fca5a5;
+}
+
+.console-info {
+    border-left-color: var(--accent) !important;
+    color: #93c5fd;
+}
+
+/* Drag and Drop Ghosting */
+.sortable-ghost {
+    opacity: 0.4;
+    background: #dbeafe !important;
+    border: 2px dashed #3b82f6 !important;
+}
+
 .console-toolbar {
     position: fixed;
     bottom: 0;
@@ -16,7 +78,7 @@
     transition: background-color 0.3s ease;
     min-height: 50px;
     max-height: 400px;
-    height: 150px;
+    height: 100px;
     /* Default height */
 }
 

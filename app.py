@@ -1,91 +1,122 @@
+import os
+import json
+import importlib.util
+import inspect
+import traceback
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # Import CORS
-import subprocess, os, logging, json
-
-logging.basicConfig(filename='script_execution.log', level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-
-example_scripts = [
-    {'name': 'script1.py', 'description': 'This is script 1', 'filePath': 'add header.py', 'isChecked': True}
-]
+from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
-@app.route('/example_scripts', methods=['GET'])
-def get_example_scripts():
-    return jsonify(example_scripts)
+PLUGIN_DIR = os.path.join(os.path.dirname(__file__), 'plugins')
+# Default workspace if none is set
+DEFAULT_WORKSPACE = os.path.join(os.path.expanduser("~"), "Documents", "GCodeWorkspace")
 
-# Endpoint to save configuration name and location
-@app.route('/save_config_info', methods=['POST'])
-def save_config_info():
-    data = request.json
-    try:
-        with open('config_info.json', 'w') as f:
-            json.dump(data, f, indent=4)  # Save configuration info
-        return jsonify(success=True)
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+# Replace your current get_workspace and add these routes to app.py
 
-# Endpoint to load configuration name and location
-@app.route('/load_config_info', methods=['GET'])
-def load_config_info():
-    try:
-        with open('config_info.json', 'r') as f:
-            data = json.load(f)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+def get_workspace():
+    if os.path.exists('config_info.json'):
+        try:
+            with open('config_info.json', 'r') as f:
+                data = json.load(f)
+                return data.get('workspace', DEFAULT_WORKSPACE)
+        except:
+            pass
+    return DEFAULT_WORKSPACE
 
 @app.route('/save', methods=['POST'])
-def save_configuration():
-    data = request.json
-    # Save data to a JSON file
-    try:
-        with open('configuration.json', 'w') as f:
-            json.dump(data, f, indent=4)  # Write data in a pretty JSON format
-        return jsonify(success=True)
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+def save_config():
+    scripts = request.json
+    with open('configuration.json', 'w') as f:
+        json.dump(scripts, f, indent=4)
+    return jsonify({"status": "success"})
 
 @app.route('/load', methods=['GET'])
-def load_configuration():
-    try:
+def load_config():
+    if os.path.exists('configuration.json'):
         with open('configuration.json', 'r') as f:
-            data = json.load(f)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+            return jsonify(json.load(f))
+    return jsonify([])
 
-# Endpoint to execute scripts
+@app.route('/list_workspaces', methods=['GET'])
+def list_workspaces():
+    current = get_workspace()
+    parent = os.path.dirname(current)
+    # Suggest other folders in the same parent directory
+    try:
+        options = [os.path.join(parent, d) for d in os.listdir(parent) if os.path.isdir(os.path.join(parent, d))]
+        return jsonify(options[:10]) # Return top 10 suggestions
+    except:
+        return jsonify([DEFAULT_WORKSPACE])
+
+def get_plugin_functions():
+    """Scans plugins folder and returns a mapping of 'Module.Function': function_object"""
+    plugins = {}
+    if not os.path.exists(PLUGIN_DIR):
+        os.makedirs(PLUGIN_DIR)
+        
+    for filename in os.listdir(PLUGIN_DIR):
+        if filename.endswith('.py') and filename != '__init__.py':
+            module_name = filename[:-3]
+            path = os.path.join(PLUGIN_DIR, filename)
+            
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            # Grab every function defined in that file
+            for name, func in inspect.getmembers(module, inspect.isfunction):
+                plugins[f"{module_name}.{name}"] = func
+    return plugins
+
+@app.route('/list_plugins', methods=['GET'])
+def list_plugins():
+    return jsonify(list(get_plugin_functions().keys()))
+
 @app.route('/execute', methods=['POST'])
 def execute_scripts():
-    scripts = request.json.get('scripts', [])
-    results = {}
-    if not scripts:
-        return jsonify({'error': 'No scripts provided'}), 400
+    data = request.json
+    target_path = data.get('targetPath')
+    filename = data.get('filename')
+    scripts = data.get('scripts', [])
+    
+    # Combine Workspace + Filename
+    workspace = get_workspace()
+    target_path = os.path.join(workspace, filename)
 
-    for script in scripts:
-        try:
-            result = subprocess.run(['python', script['filePath']], capture_output=True, text=True)
-            results[script['name']] = {
-                'stdout': result.stdout.strip(),
-                'stderr': result.stderr.strip(),
-                'exit_code': result.returncode,
-            }
-            # Log execution result
-            #logging.info(f"Executed {script['name']} - Exit Code: {result.returncode}")
-        except Exception as e:
-            results[script['name']] = {
-                'error': str(e),
-                'exit_code': -1,
-            }
-            #logging.error(f"Error executing {script['name']}: {str(e)}")
+    try:
+        if not os.path.exists(target_path):
+            return jsonify({"error": f"File not found: {target_path}"}), 404
 
-    return jsonify(results)
+        with open(target_path, 'r') as f:
+            lines = f.readlines()
 
+        # Load fresh plugins (allows editing plugins without restarting server)
+        available_plugins = get_plugin_functions()
+
+        for step in scripts:
+            key = step.get('pluginKey')
+            if key in available_plugins:
+                try:
+                    # Execute the plugin function
+                    lines = available_plugins[key](lines)
+                except Exception as e:
+                    # Specific error handling for the PLUGIN logic
+                    error_info = traceback.format_exc()
+                    return jsonify({
+                        "error": f"Plugin '{key}' failed: {str(e)}",
+                        "trace": error_info
+                    }), 500
+
+        with open(target_path, 'w') as f:
+            f.writelines(lines)
+
+        return jsonify({"status": "success", "path_used": target_path, "message": "G-code processed successfully"})
+
+    except Exception as e:
+        # General error handling (File IO, permissions, etc)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Make sure to set the directory where your scripts are located
-    os.chdir('G:/3D printing/PCB Milling gcode')  # Change this to your scripts directory
     app.run(debug=True)

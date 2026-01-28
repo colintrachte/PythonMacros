@@ -162,15 +162,13 @@ def modify_laser_gcode(lines):
         # Add command after `G01 Z0.0000`
         if line.strip() == "G1 Z0.00":
             modified_lines.append(line)
-            modified_lines.append("SET_PIN PIN=laser VALUE=0.2\n")
+            modified_lines.append("SET_PIN PIN=laser VALUE=0.4\n")
         # Replace `G01 Z10.0000`
-        elif line.strip() == "G1 Z1.00":
+        elif line.strip() == "G0 Z1.00":
             modified_lines.append("SET_PIN PIN=laser VALUE=0\n")
         else:
             modified_lines.append(line)
     return modified_lines
-
-# GUI Setup
 
 class GCodeEditorGUI:
     def __init__(self, root, processor):
@@ -212,10 +210,10 @@ class GCodeEditorGUI:
         # Use default steps if no saved configuration is found
         default_steps = [
             ("Remove Old Header", remove_before_M106),
-            ("Add Header", add_header),
-            ("Insert Before G1 Z", insert_before_first_g1z),
-            ("Remove After M107", remove_after_m107),
-            ("Add Footer", add_footer),
+            #("Add Header", add_header),
+            #("Insert Before G1 Z", insert_before_first_g1z),
+            #("Remove After M107", remove_after_m107),
+            #("Add Footer", add_footer),
             ("convert_g01_g00_2decimals",convert_g01_g00_2decimals),
             ("Add Laser Header and Footer", add_laser_header_footer),
             ("Modify Laser G-code", modify_laser_gcode),
