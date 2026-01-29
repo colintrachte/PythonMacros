@@ -11,9 +11,16 @@ CORS(app)
 
 PLUGIN_DIR = os.path.join(os.path.dirname(__file__), 'plugins')
 # Default workspace if none is set
-DEFAULT_WORKSPACE = os.path.join(os.path.expanduser("~"), "Documents", "GCodeWorkspace")
+DEFAULT_WORKSPACE = os.path.join(os.path.dirname(__file__), 'workspaces')
+SESSION_FILE = 'last_session.json'
 
-# Replace your current get_workspace and add these routes to app.py
+def initialize_session_file():
+    """Creates an empty session file if it doesn't exist."""
+    if not os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, 'w') as f:
+            json.dump([], f)  # Initialize with an empty list of steps
+
+initialize_session_file()
 
 def get_workspace():
     if os.path.exists('config_info.json'):
@@ -28,14 +35,14 @@ def get_workspace():
 @app.route('/save', methods=['POST'])
 def save_config():
     scripts = request.json
-    with open('configuration.json', 'w') as f:
+    with open(SESSION_FILE, 'w') as f:
         json.dump(scripts, f, indent=4)
     return jsonify({"status": "success"})
 
 @app.route('/load', methods=['GET'])
 def load_config():
-    if os.path.exists('configuration.json'):
-        with open('configuration.json', 'r') as f:
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, 'r') as f:
             return jsonify(json.load(f))
     return jsonify([])
 

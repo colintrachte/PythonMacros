@@ -1,0 +1,7 @@
+[
+    {
+        "pluginKey": "iaq_utils.process_sensor_data",
+        "description": "Apply iaq_utils.process_sensor_data",
+        "isChecked": true
+    }
+]

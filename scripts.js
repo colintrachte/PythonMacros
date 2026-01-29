@@ -1,4 +1,3 @@
-const targetpath = document.getElementById('targetPath');
 const scriptList = document.getElementById('scriptList');
 const playAllButton = document.getElementById('playAll');
 const loadConfigButton = document.getElementById('loadConfig');
