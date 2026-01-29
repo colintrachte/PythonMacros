@@ -93,24 +93,6 @@
         </div>
     </main>
 
-    <div id="pluginModal"
-        class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="p-6 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Available Plugins</h3>
-                <p class="text-sm text-gray-500">Select a function from your plugins folder</p>
-                <input type="text" id="modalSearch" placeholder="Search functions..."
-                    class="mt-4 w-full border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <ul id="pluginList" class="max-h-80 overflow-y-auto divide-y divide-gray-100">
-            </ul>
-            <div class="p-4 bg-gray-50 flex justify-end">
-                <button onclick="closePluginModal()"
-                    class="px-4 py-2 text-sm font-bold text-gray-600 hover:text-gray-800">Close</button>
-            </div>
-        </div>
-    </div>
-
     <div class="console-toolbar border-t-4 border-black/10" id="consoleToolbar">
         <div class="resize-handle" id="resizeHandle"></div>
         <div class="console-content font-mono text-xs p-4 bg-slate-900" id="consoleContent">
