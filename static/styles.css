@@ -4,29 +4,31 @@
     --bg: #0d1117;
     --surface: #161b22;
     --surface-2: #1c2128;
-    --border: #30363d;
-    --border-subtle: #21262d;
-    --accent: #3b82f6;
-    --accent-dim: rgba(59, 130, 246, 0.15);
-    --accent-glow: rgba(59, 130, 246, 0.3);
-    --success: #22c55e;
-    --success-dim: rgba(34, 197, 94, 0.12);
-    --danger: #ef4444;
-    --danger-dim: rgba(239, 68, 68, 0.12);
-    --warning: #f59e0b;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --text-dim: #484f58;
+    --border: #3d444d;
+    --border-subtle: #2d333b;
+    --accent: #4d94ff;
+    --accent-dim: rgba(77, 148, 255, 0.15);
+    --accent-glow: rgba(77, 148, 255, 0.3);
+    --success: #2ecc71;
+    --success-dim: rgba(46, 204, 113, 0.12);
+    --danger: #ff5555;
+    --danger-dim: rgba(255, 85, 85, 0.12);
+    --warning: #f7b731;
+    --text-primary: #ffffff;
+    --text-secondary: #b0bec5;
+    --text-dim: #6e7e8e;
     --mono: 'JetBrains Mono', monospace;
     --sans: 'DM Sans', system-ui, sans-serif;
     --radius: 8px;
     --radius-lg: 14px;
-    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
-    --shadow-lg: 0 4px 24px rgba(0,0,0,0.6);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.6);
     --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     box-sizing: border-box;
 }
 
@@ -65,7 +67,7 @@ header {
 
 .logo {
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.08em;
     color: var(--text-primary);
@@ -97,7 +99,7 @@ header {
 }
 
 .workspace-pill-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -108,7 +110,7 @@ header {
 
 .workspace-pill-value {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-secondary);
 }
 
@@ -146,7 +148,7 @@ header {
 }
 
 .file-badge-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -157,7 +159,7 @@ header {
 
 .file-badge-value {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-secondary);
 }
 
@@ -200,7 +202,7 @@ header {
 
 .icon-btn.danger:hover {
     background: var(--danger-dim);
-    border-color: rgba(239,68,68,0.3);
+    border-color: rgba(239, 68, 68, 0.3);
     color: var(--danger);
 }
 
@@ -215,24 +217,24 @@ header {
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 7px 14px;
+    padding: 7px 16px;
     background: var(--success);
     color: #fff;
     border: none;
     border-radius: 6px;
     font-family: var(--sans);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     transition: all var(--transition);
     letter-spacing: 0.03em;
     margin-left: 4px;
-    box-shadow: 0 1px 4px rgba(34,197,94,0.3);
+    box-shadow: 0 1px 4px rgba(46, 204, 113, 0.3);
 }
 
 .run-btn:hover {
-    background: #16a34a;
-    box-shadow: 0 2px 12px rgba(34,197,94,0.4);
+    background: #27ae60;
+    box-shadow: 0 2px 12px rgba(46, 204, 113, 0.4);
     transform: translateY(-1px);
 }
 
@@ -282,7 +284,7 @@ header {
 }
 
 .toolbar-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -303,7 +305,7 @@ header {
     background: transparent;
     color: var(--text-secondary);
     font-family: var(--sans);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     transition: all var(--transition);
@@ -333,7 +335,7 @@ header {
 
 .seq-filename {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-dim);
     margin-left: 8px;
     padding-left: 10px;
@@ -364,15 +366,15 @@ main {
 }
 
 .section-title {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
-    color: var(--text-dim);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.1em;
 }
 
 .section-hint {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-dim);
 }
 
@@ -439,14 +441,14 @@ main {
 
 .step-key {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .step-note {
     font-family: var(--sans);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-secondary);
     background: transparent;
     border: none;
@@ -481,7 +483,7 @@ main {
 
 .step-delete:hover {
     background: var(--danger-dim);
-    border-color: rgba(239,68,68,0.3);
+    border-color: rgba(239, 68, 68, 0.3);
     color: var(--danger);
 }
 
@@ -497,7 +499,7 @@ main {
 
 .sortable-drag {
     opacity: 1;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
     border-color: var(--accent) !important;
 }
 
@@ -514,9 +516,9 @@ main {
     border: 1px dashed var(--border);
     border-radius: var(--radius);
     background: transparent;
-    color: var(--text-dim);
+    color: var(--text-secondary);
     font-family: var(--sans);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -573,7 +575,7 @@ main {
     border-radius: 6px;
     padding: 7px 12px;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-primary);
     outline: none;
     transition: border-color var(--transition);
@@ -601,11 +603,11 @@ main {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: 9px 12px;
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-secondary);
     transition: all var(--transition);
 }
@@ -628,8 +630,8 @@ main {
 .plugin-empty {
     padding: 20px;
     text-align: center;
-    font-size: 12px;
-    color: var(--text-dim);
+    font-size: 13px;
+    color: var(--text-secondary);
     font-family: var(--sans);
 }
 
@@ -642,7 +644,7 @@ main {
     right: 0;
     background: var(--surface);
     border-top: 1px solid var(--border);
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -673,7 +675,8 @@ main {
     border-radius: 2px;
 }
 
-.resize-handle:hover, .resize-handle:hover::after {
+.resize-handle:hover,
+.resize-handle:hover::after {
     background: var(--accent);
 }
 
@@ -688,16 +691,16 @@ main {
 
 .console-title {
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-dim);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
 .console-clear {
-    font-size: 10px;
-    color: var(--text-dim);
+    font-size: 11px;
+    color: var(--text-secondary);
     background: none;
     border: none;
     cursor: pointer;
@@ -708,7 +711,7 @@ main {
 }
 
 .console-clear:hover {
-    color: var(--text-secondary);
+    color: var(--text-primary);
     background: var(--surface-2);
 }
 
@@ -736,7 +739,7 @@ main {
 
 .console-line {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.7;
     padding-left: 10px;
     border-left: 2px solid transparent;
@@ -749,12 +752,12 @@ main {
 }
 
 .console-line.success {
-    color: #86efac;
+    color: #6ee7a0;
     border-left-color: var(--success);
 }
 
 .console-line.error {
-    color: #fca5a5;
+    color: #ff9a9a;
     border-left-color: var(--danger);
 }
 
