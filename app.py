@@ -3,7 +3,7 @@ import json
 import importlib.util
 import inspect
 import traceback
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -32,6 +32,10 @@ def get_config():
     return {"workspace": DEFAULT_WS}
 
 # --- Routes ---
+
+@app.route('/')
+def hello_world():
+    return render_template("index.html")
 
 @app.route('/get_workspace', methods=['GET'])
 def get_workspace_route():
