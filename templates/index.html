@@ -1,122 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Python Automation</title>
+    <title>PY-AUTOMATE</title>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
+<body>
 
-<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <header>
+        <div class="header-left">
+            <div class="logo">PY<span>·</span>AUTOMATE</div>
 
-    <header class="bg-blue-600 text-white p-3 flex justify-between items-center shadow-lg px-8">
-        <div class="flex items-center space-x-8">
-            <h1 class="text-xl font-black tracking-tighter italic">PY-AUTOMATE</h1>
-
-            <div onclick="changeWorkspace()"
-                class="group flex items-center cursor-pointer border-l border-blue-400 pl-6 py-1 hover:text-blue-200 transition">
-                <div class="flex flex-col">
-                    <span class="text-[10px] uppercase font-bold text-blue-300 leading-none mb-1">Active
-                        Workspace</span>
-                    <span id="workspaceDisplay"
-                        class="text-sm font-mono opacity-90 group-hover:opacity-100">Loading...</span>
+            <div class="workspace-pill" id="workspaceBtn" title="Click to change workspace">
+                <div>
+                    <div class="workspace-pill-label">Workspace</div>
+                    <div class="workspace-pill-value" id="workspaceDisplay">Loading…</div>
                 </div>
-                <svg class="w-4 h-4 ml-3 opacity-50 group-hover:opacity-100" fill="none" stroke="currentColor"
-                    viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                 </svg>
             </div>
         </div>
 
-        <div class="flex items-center space-x-6">
-            <label for="filePicker"
-                class="flex flex-col items-end cursor-pointer group px-4 py-1 rounded hover:bg-blue-500/30 transition">
-                <span class="text-[10px] uppercase font-bold text-blue-300 leading-none mb-1 text-right">Target
-                    File</span>
-                <span id="fileDisplay" class="text-sm font-mono italic">No file selected</span>
-                <input type="file" id="filePicker" class="hidden">
+        <div class="header-right">
+            <label class="file-badge" title="Select target file to process">
+                <span class="file-badge-label">Target File</span>
+                <span class="file-badge-value" id="fileDisplay">No file selected</span>
+                <input type="file" id="filePicker" style="display:none">
             </label>
-            <button id="undoSession" title="Undo / Revert to Last Session"
-                class="p-2 hover:text-blue-200 transition transform hover:scale-110">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5" />
+
+            <div class="btn-divider"></div>
+
+            <button class="run-btn" id="playAll" title="Run sequence (active steps only)">
+                <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
                 </svg>
+                Run
             </button>
-            <div class="flex items-center space-x-3 border-l border-blue-400 pl-4">
-                <button id="loadConfig" title="Load Sequence"
-                    class="p-2 hover:text-blue-200 transition transform hover:scale-110">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                </button>
-                <button id="saveConfig" title="Save Sequence"
-                    class="p-2 hover:text-blue-200 transition transform hover:scale-110">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                </button>
-                <button id="playAll" title="Run Sequence"
-                    class="p-2 bg-green-500 hover:bg-green-600 rounded-full shadow-lg transition transform hover:scale-110"><svg
-                        class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                    </svg>
-                </button>
-            </div>
         </div>
     </header>
 
-    <main class="flex-grow p-8">
-        <div class="max-w-4xl mx-auto">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-gray-600 font-bold uppercase text-sm tracking-widest">Processing Sequence</h2>
-                <span class="text-xs text-gray-400">Drag to reorder steps</span>
+    <!-- ── Toolbar strip ───────────────────────────────────────────────── -->
+    <div class="toolbar-strip">
+        <span class="toolbar-label">Sequence</span>
+
+        <button class="tb-btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+            </svg>
+            Undo
+        </button>
+        <button class="tb-btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled>
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="transform:scaleX(-1)">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+            </svg>
+            Redo
+        </button>
+
+        <div class="btn-divider"></div>
+
+        <button class="tb-btn" id="saveBtn" title="Save (Ctrl+S)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+            Save
+        </button>
+        <button class="tb-btn" id="saveAsBtn" title="Save As (Ctrl+Shift+S)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+            Save As
+        </button>
+        <button class="tb-btn" id="loadSeqBtn" title="Load sequence from file">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Load
+        </button>
+        <input type="file" id="seqFilePicker" accept=".json" style="display:none">
+
+        <!-- Save-As inline bar (hidden until triggered) -->
+        <div class="saveas-bar" id="saveAsBar">
+            <input class="saveas-input" id="saveAsInput" type="text" placeholder="filename.json">
+            <button class="saveas-confirm" id="saveAsConfirm">Save</button>
+            <button class="saveas-cancel" id="saveAsCancel">Cancel</button>
+        </div>
+
+        <span class="seq-filename" id="seqFilename">unsaved</span>
+    </div>
+
+    <!-- ── Main ────────────────────────────────────────────────────────── -->
+    <main>
+        <div class="main-inner">
+            <div class="section-header">
+                <span class="section-title">Processing Steps</span>
+                <span class="section-hint">Drag to reorder · uncheck to skip</span>
             </div>
 
-            <ul id="scriptList" class="space-y-3">
-            </ul>
+            <ul id="scriptList"></ul>
 
-            <button id="add-global-step"
-                class="mt-6 w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all flex items-center justify-center space-x-2 group">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:rotate-90 transition-transform"
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                <span class="font-bold">Add New Processing Step</span>
-            </button>
+            <div id="emptyState" class="empty-state">
+                <div class="empty-state-icon">⬡</div>
+                No steps yet. Add a plugin below to begin.
+            </div>
+
+            <!-- Add step + inline plugin dropdown -->
+            <div class="add-step-wrap">
+                <button id="add-global-step">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Processing Step
+                </button>
+
+                <div class="plugin-dropdown" id="pluginDropdown">
+                    <div class="plugin-search-wrap">
+                        <input class="plugin-search" id="pluginSearch" type="text" placeholder="Search plugins…" autocomplete="off">
+                    </div>
+                    <ul class="plugin-list" id="pluginList"></ul>
+                </div>
+            </div>
         </div>
     </main>
 
-    <div class="console-toolbar border-t-4 border-black/10" id="consoleToolbar">
+    <!-- ── Console ─────────────────────────────────────────────────────── -->
+    <div class="console-toolbar" id="consoleToolbar">
         <div class="resize-handle" id="resizeHandle"></div>
-        <div class="console-content font-mono text-xs p-4 bg-slate-900" id="consoleContent">
-            <p class="text-blue-400 font-bold">--- System Initialized ---</p>
+        <div class="console-header">
+            <span class="console-title">Output</span>
+            <button class="console-clear" id="consoleClear">Clear</button>
         </div>
+        <div class="console-content" id="consoleContent"></div>
     </div>
 
-    <div id="selectionModal"
-        class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-white/20">
-            <div class="p-8 border-b bg-gray-50">
-                <h3 id="modalTitle" class="text-2xl font-black text-gray-800 uppercase tracking-tight">Select Action
-                </h3>
-                <input type="text" id="modalSearch" placeholder="Search..."
-                    class="mt-4 w-full bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
-            </div>
-            <ul id="modalList" class="max-h-96 overflow-y-auto p-4 space-y-2">
-            </ul>
-            <div class="p-4 bg-gray-100 flex justify-center">
-                <button onclick="closeModal()"
-                    class="text-sm font-bold text-gray-400 hover:text-gray-600 transition uppercase tracking-widest">Dismiss</button>
-            </div>
-        </div>
-    </div>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
 </body>
-
 </html>
