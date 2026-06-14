@@ -1,0 +1,32 @@
+[
+    {
+        "pluginKey": "endmill_utils.remove_before_first_M03",
+        "description": "Strip FlatCAM preamble (everything before M03 spindle-on)",
+        "isChecked": true
+    },
+    {
+        "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
+        "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
+        "isChecked": true
+    },
+    {
+        "pluginKey": "endmill_utils.insert_endmill_power_before_first_z_move",
+        "description": "Inject SET_PIN PIN=end_mill VALUE=250 before first Z plunge",
+        "isChecked": true
+    },
+    {
+        "pluginKey": "endmill_utils.remove_after_M107",
+        "description": "Truncate at M107 (spindle off), stripping FlatCAM footer",
+        "isChecked": true
+    },
+    {
+        "pluginKey": "endmill_utils.add_printer_header",
+        "description": "Prepend G28 home + GRAB_ENDMILL",
+        "isChecked": true
+    },
+    {
+        "pluginKey": "endmill_utils.add_footer",
+        "description": "Append shutdown footer (SET_PIN VALUE=0, HOME_XY, TOOL_DROPOFF)",
+        "isChecked": true
+    }
+]

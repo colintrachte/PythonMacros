@@ -1,8 +1,18 @@
-# plugins/gcode_utils.py
-
 import re
 import csv
 import io
+
+PLUGIN_META = {
+    "label":       "IAQ sensor log tools",
+    "description": "Plugins for processing indoor-air-quality sensor log files.",
+    "accepts":     ["text/plain"],
+    "outputs":     ["text/plain", "text/csv"],
+    "requires":    [],
+    "external":    [],
+    "language":    "python",
+    "tags":        ["sensor", "csv", "iaq"],
+}
+
 
 def process_sensor_data(lines):
     """
@@ -43,3 +53,9 @@ def process_sensor_data(lines):
 
     # Return the CSV content as a list of lines to remain compatible with app.py
     return output.getvalue().splitlines(keepends=True)
+
+process_sensor_data.plugin_meta = {
+    "label":       "Sensor log → CSV",
+    "description": "Parses timestamped Key:Value sensor log lines and converts them to a CSV table.",
+    "outputs":     ["text/csv"],
+}
