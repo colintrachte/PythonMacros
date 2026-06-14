@@ -165,14 +165,47 @@ def _is_legacy(fn) -> bool:
 
 
 def _wrap_legacy(fn):
-    """Wrap fn(list[str]) -> list[str] into fn(Payload) -> Payload."""
-    def wrapped(payload: Payload) -> Payload:
-        payload.data = fn(payload.data)
+    """Wrap fn(list[str], ...) -> list[str] into fn(Payload, **kwargs) -> Payload."""
+    orig_sig    = inspect.signature(fn)
+    orig_params = set(orig_sig.parameters.keys())
+
+    def wrapped(payload: Payload, **kwargs) -> Payload:
+        relevant = {k: v for k, v in kwargs.items() if k in orig_params}
+        payload.data = fn(payload.data, **relevant)
         return payload
-    wrapped.__name__ = fn.__name__
-    wrapped.__doc__  = fn.__doc__
-    wrapped._legacy  = True
+
+    wrapped.__name__   = fn.__name__
+    wrapped.__doc__    = fn.__doc__
+    wrapped._legacy    = True
+    wrapped._orig_sig  = orig_sig
     return wrapped
+
+
+def _discover_fn_args(fn) -> list:
+    """Return [{name, type, default, label}] for every kwarg beyond the first param."""
+    sig    = getattr(fn, '_orig_sig', None) or inspect.signature(fn)
+    params = list(sig.parameters.values())
+    result = []
+    for p in params[1:]:
+        if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        if p.default is inspect.Parameter.empty:
+            continue
+        result.append({
+            "name":    p.name,
+            "type":    type(p.default).__name__,
+            "default": p.default,
+            "label":   p.name.replace('_', ' ').title(),
+        })
+    return result
+
+
+def _coerce_arg(value, default):
+    """Coerce a JSON-decoded value to the same type as the parameter default."""
+    try:
+        return type(default)(value)
+    except (ValueError, TypeError):
+        return value
 
 
 def get_plugins() -> dict:
@@ -229,20 +262,28 @@ def get_plugins() -> dict:
         deps_ok = len(missing) == 0
 
         module_funcs = []
+        module_args  = {}   # {name: arg_dict}, deduplicated across all fns in module
         for fn_name, fn in inspect.getmembers(module, inspect.isfunction):
             if fn_name.startswith('_'):
                 continue
             callable_fn = _wrap_legacy(fn) if _is_legacy(fn) else fn
             module_funcs.append(callable_fn)
 
-            # Legacy per-function key — kept for backwards compatibility with
-            # pipelines saved before the one-entry-per-file change.
+            # Collect discoverable args from this function
+            for arg in _discover_fn_args(callable_fn):
+                if arg["name"] not in module_args:
+                    module_args[arg["name"]] = arg
+
+            # Per-function key: used by "Add Step" picker and for backwards
+            # compatibility with pipelines saved before the one-entry-per-file change.
             fn_meta = {**file_meta, **getattr(fn, 'plugin_meta', {})}
             if fn_meta["label"] is None:
                 fn_meta["label"] = f"{module_name}.{fn_name}"
+            fn_meta["args"] = _discover_fn_args(callable_fn)
             plugins[f"{module_name}.{fn_name}"] = {
                 "funcs":       [callable_fn],
                 "meta":        fn_meta,
+                "module":      module_name,
                 "deps_ok":     deps_ok,
                 "missing_deps": missing,
                 "_ui_hidden":  True,
@@ -255,6 +296,14 @@ def get_plugins() -> dict:
         mod_meta = {**file_meta}
         if mod_meta["label"] is None:
             mod_meta["label"] = module_name.replace('_', ' ').title()
+
+        # Allow PLUGIN_META["args"] to override labels/add hints for individual args
+        for override in file_meta.get("args", []):
+            name = override.get("name")
+            if name and name in module_args:
+                module_args[name].update(override)
+
+        mod_meta["args"] = list(module_args.values())
 
         plugins[module_name] = {
             "funcs":       module_funcs,
@@ -672,6 +721,36 @@ def list_plugins():
             "deps_ok":      info["deps_ok"],
             "missing_deps": info["missing_deps"],
             "func_count":   info["func_count"],
+            "args":         m.get("args", []),
+        })
+    return jsonify(result)
+
+
+@app.route('/list_functions', methods=['GET'])
+def list_functions():
+    """
+    Return one entry per public function across all plugin modules.
+    Used by the "Add Processing Step" picker so users browse individual operations.
+    Each entry includes a `module` key for filtering by session-enabled modules.
+    """
+    plugins = get_plugins()
+    result  = []
+    for key, info in plugins.items():
+        if not info.get("_ui_hidden"):
+            continue  # skip module-level entries
+        m = info["meta"]
+        result.append({
+            "key":          key,
+            "module":       info["module"],
+            "label":        m["label"],
+            "description":  m["description"],
+            "accepts":      m["accepts"],
+            "outputs":      m["outputs"],
+            "tags":         m["tags"],
+            "deps_ok":      info["deps_ok"],
+            "missing_deps": info["missing_deps"],
+            "func_count":   1,
+            "args":         m.get("args", []),
         })
     return jsonify(result)
 
@@ -733,13 +812,13 @@ def execute_scripts():
                 "error":        f"Plugin '{key}' has unsatisfied dependencies.",
                 "missing_deps": info["missing_deps"],
             }), 400
-        active_steps.append((key, info["funcs"], info["meta"]))
+        active_steps.append((key, info["funcs"], info["meta"], step.get('args', {})))
 
     try:
         payload  = payload_from_file(target_path)
         step_log = []
 
-        for key, funcs, meta in active_steps:
+        for key, funcs, meta, step_args in active_steps:
             accepted = meta.get("accepts", [])
             if accepted and payload.mime_type not in accepted:
                 step_log.append({
@@ -752,7 +831,15 @@ def execute_scripts():
 
             for fn in funcs:
                 try:
-                    payload = fn(payload)
+                    # Resolve which of the step's args this fn accepts
+                    sig        = getattr(fn, '_orig_sig', None) or inspect.signature(fn)
+                    fn_params  = dict(list(sig.parameters.items())[1:])  # skip first param
+                    fn_kwargs  = {
+                        k: _coerce_arg(v, fn_params[k].default)
+                        for k, v in step_args.items()
+                        if k in fn_params and fn_params[k].default is not inspect.Parameter.empty
+                    }
+                    payload = fn(payload, **fn_kwargs)
                 except Exception as e:
                     return jsonify({
                         "error":     f"Step '{key}' → '{fn.__name__}' raised an exception: {e}",

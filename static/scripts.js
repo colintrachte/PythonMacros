@@ -12,7 +12,8 @@ const state = {
     sessionDir:            null,
     outputFilename:        null,
     currentPresetName:     null,
-    pluginCache:           [],
+    pluginCache:           [],   // module-level entries, for "Choose Plugins" panel
+    functionCache:         [],   // function-level entries, for "Add Step" picker
     // Batch
     batchFiles:            [],    // [{name, size, file}] for current selection
     pendingFiles:          [],    // held during warn prompt before upload starts
@@ -20,7 +21,7 @@ const state = {
     batchRunDone:          false, // true after a batch run completes
     uploadAbortFlag:       false,
     // Choose Plugins
-    sessionPlugins:        null,   // null = all available; Set = restricted set
+    sessionPlugins:        null,   // null = all available; Set = restricted set (module keys)
     chooseTagFilter:       null,   // tag filter inside the choose panel
     chooseOpen:            false,
     // Add Step picker
@@ -63,15 +64,18 @@ function log(msg, type = 'info') {
 
 // ── Step list ──────────────────────────────────────────────────────────────
 
-function createStepEl({ pluginKey, description = '', isChecked = true }) {
+function createStepEl({ pluginKey, description = '', isChecked = true, args = {} }) {
     const li = document.createElement('li');
     li.dataset.pluginKey = pluginKey;
     if (!isChecked) li.classList.add('step-disabled');
 
-    const info   = state.pluginCache.find(p => p.key === pluginKey) || {};
-    const label  = info.label || pluginKey;
-    const depsOk = info.deps_ok !== false;
-    const missing = info.missing_deps || [];
+    const info      = state.functionCache.find(p => p.key === pluginKey)
+                   || state.pluginCache.find(p => p.key === pluginKey)
+                   || {};
+    const label     = info.label || pluginKey;
+    const depsOk    = info.deps_ok !== false;
+    const missing   = info.missing_deps || [];
+    const pluginArgs = info.args || [];
 
     const depWarn = !depsOk
         ? `<div class="step-dep-warning" title="Missing: ${missing.join(', ')}">
@@ -79,6 +83,22 @@ function createStepEl({ pluginKey, description = '', isChecked = true }) {
                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                          d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                </svg>Missing deps</div>`
+        : '';
+
+    const argsHtml = pluginArgs.length
+        ? `<div class="step-args">${pluginArgs.map(a => {
+            const val = args[a.name] !== undefined ? args[a.name] : a.default;
+            if (a.type === 'bool') {
+                return `<label class="step-arg-row">
+                    <span class="step-arg-label">${a.label}</span>
+                    <input type="checkbox" class="step-arg-input" data-arg="${a.name}" data-arg-type="bool" ${val ? 'checked' : ''}>
+                </label>`;
+            }
+            return `<label class="step-arg-row">
+                <span class="step-arg-label">${a.label}</span>
+                <input type="number" class="step-arg-input" data-arg="${a.name}" data-arg-type="${a.type}" value="${val}" step="${a.type === 'float' ? 'any' : '1'}">
+            </label>`;
+        }).join('')}</div>`
         : '';
 
     li.innerHTML = `
@@ -97,6 +117,7 @@ function createStepEl({ pluginKey, description = '', isChecked = true }) {
                 ${depWarn}
             </div>
             <input type="text" class="step-note" value="${description.replace(/"/g,'&quot;')}" placeholder="Add a note…">
+            ${argsHtml}
         </div>
         <button class="step-delete" title="Remove step">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,6 +131,9 @@ function createStepEl({ pluginKey, description = '', isChecked = true }) {
         pushHistoryAndSave();
     });
     li.querySelector('.step-note').addEventListener('change', pushHistoryAndSave);
+    li.querySelectorAll('.step-arg-input').forEach(input => {
+        input.addEventListener('change', pushHistoryAndSave);
+    });
     li.querySelector('.step-delete').addEventListener('click', () => {
         li.remove(); updateEmptyState(); pushHistoryAndSave();
     });
@@ -117,11 +141,26 @@ function createStepEl({ pluginKey, description = '', isChecked = true }) {
 }
 
 function getSequence() {
-    return Array.from(el.scriptList.children).map(li => ({
-        pluginKey:   li.dataset.pluginKey,
-        description: li.querySelector('.step-note').value,
-        isChecked:   li.querySelector('.step-checkbox').checked,
-    }));
+    return Array.from(el.scriptList.children).map(li => {
+        const args = {};
+        li.querySelectorAll('.step-arg-input').forEach(input => {
+            const name = input.dataset.arg;
+            const type = input.dataset.argType;
+            if (type === 'bool') {
+                args[name] = input.checked;
+            } else if (type === 'int') {
+                args[name] = parseInt(input.value, 10);
+            } else {
+                args[name] = parseFloat(input.value);
+            }
+        });
+        return {
+            pluginKey:   li.dataset.pluginKey,
+            description: li.querySelector('.step-note').value,
+            isChecked:   li.querySelector('.step-checkbox').checked,
+            args,
+        };
+    });
 }
 
 function renderSequence(steps) {
@@ -545,7 +584,8 @@ function updateChoosePluginsBtn() {
 
 function updateAddStepLabel() {
     if (state.sessionPlugins) {
-        el.addStepLabel.textContent = `Add Step  (${state.sessionPlugins.size} available)`;
+        const n = state.functionCache.filter(p => state.sessionPlugins.has(p.module || p.key)).length;
+        el.addStepLabel.textContent = `Add Step  (${n} available)`;
     } else {
         el.addStepLabel.textContent = 'Add Processing Step';
     }
@@ -556,13 +596,13 @@ function updateAddStepLabel() {
 async function openPluginDropdown() {
     if (state.pluginDropdownOpen) { closePluginDropdown(); return; }
     try {
-        const r = await fetch(`${API_BASE}/list_plugins`);
-        state.pluginCache = await r.json();
-    } catch (e) { log('Could not load plugins: ' + e.message, 'error'); return; }
+        const r = await fetch(`${API_BASE}/list_functions`);
+        state.functionCache = await r.json();
+    } catch (e) { log('Could not load plugin functions: ' + e.message, 'error'); return; }
 
     el.pluginSearch.value = '';
     renderTagBar();
-    renderPluginList(filteredForAddStep(state.pluginCache));
+    renderPluginList(filteredForAddStep(state.functionCache));
 
     el.pluginDropdown.classList.add('open');
     state.pluginDropdownOpen = true;
@@ -574,27 +614,29 @@ function closePluginDropdown() {
     state.pluginDropdownOpen = false;
 }
 
-function filteredForAddStep(plugins) {
+function filteredForAddStep(fns) {
     const q   = (el.pluginSearch.value || '').toLowerCase();
     const tag = state.addStepTagFilter;
 
-    return plugins.filter(p => {
-        const inSession   = !state.sessionPlugins || state.sessionPlugins.has(p.key);
+    return fns.filter(p => {
+        // sessionPlugins tracks module keys; functions are filtered by their parent module
+        const inSession   = !state.sessionPlugins || state.sessionPlugins.has(p.module || p.key);
         const matchesTag  = !tag || (p.tags||[]).includes(tag);
         const matchSearch = !q
             || p.key.toLowerCase().includes(q)
             || (p.label||'').toLowerCase().includes(q)
             || (p.description||'').toLowerCase().includes(q)
+            || (p.module||'').toLowerCase().includes(q)
             || (p.tags||[]).some(t => t.includes(q));
         return inSession && matchesTag && matchSearch;
     });
 }
 
 function renderTagBar() {
-    // Tags from session-available plugins only
+    // Tags from session-available functions only (filter by parent module)
     const available = state.sessionPlugins
-        ? state.pluginCache.filter(p => state.sessionPlugins.has(p.key))
-        : state.pluginCache;
+        ? state.functionCache.filter(p => state.sessionPlugins.has(p.module || p.key))
+        : state.functionCache;
     const tags = [...new Set(available.flatMap(p => p.tags || []))].sort();
     el.tagBar.innerHTML = '';
     if (!tags.length) { el.tagBar.style.display = 'none'; return; }
@@ -607,7 +649,7 @@ function renderTagBar() {
         chip.addEventListener('click', () => {
             state.addStepTagFilter = state.addStepTagFilter === value ? null : value;
             renderTagBar();
-            renderPluginList(filteredForAddStep(state.pluginCache));
+            renderPluginList(filteredForAddStep(state.functionCache));
         });
         return chip;
     };
@@ -634,6 +676,7 @@ function renderPluginList(plugins) {
         const countBadge = (p.func_count > 1)
             ? `<span class="plugin-badge badge-ops">${p.func_count} ops</span>`
             : '';
+        const subtitle = p.module ? p.module : p.key;
         li.innerHTML = `
             <div class="plugin-item-body">
                 <div class="plugin-item-label">
@@ -642,7 +685,7 @@ function renderPluginList(plugins) {
                     ${!mimeMatch ? `<span class="plugin-badge badge-mime">type mismatch</span>` : ''}
                     ${!depOk    ? `<span class="plugin-badge badge-dep" title="Missing: ${(p.missing_deps||[]).join(', ')}">missing deps</span>` : ''}
                 </div>
-                <div class="plugin-item-key">${p.key}</div>
+                <div class="plugin-item-key">${subtitle}</div>
                 ${p.description ? `<div class="plugin-item-desc">${p.description}</div>` : ''}
                 ${(p.tags||[]).length ? `<div class="plugin-item-tags">${p.tags.map(t=>`<span class="tag-label">${t}</span>`).join('')}</div>` : ''}
             </div>
@@ -911,7 +954,8 @@ async function runSequence() {
     if (!activeSteps.length) { log('No active steps to run.', 'warn'); return; }
 
     const depErrors = activeSteps
-        .map(s => state.pluginCache.find(p => p.key === s.pluginKey))
+        .map(s => state.functionCache.find(p => p.key === s.pluginKey)
+                || state.pluginCache.find(p => p.key === s.pluginKey))
         .filter(p => p && p.deps_ok === false);
     if (depErrors.length) {
         depErrors.forEach(p => log(`'${p.label}' missing: ${p.missing_deps.join(', ')}`, 'warn'));
@@ -1150,7 +1194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.undoBtn.addEventListener('click', performUndo);
     el.redoBtn.addEventListener('click', performRedo);
     el.addStepBtn.addEventListener('click', e => { e.stopPropagation(); openPluginDropdown(); });
-    el.pluginSearch.addEventListener('input', () => renderPluginList(filteredForAddStep(state.pluginCache)));
+    el.pluginSearch.addEventListener('input', () => renderPluginList(filteredForAddStep(state.functionCache)));
     el.pluginSearch.addEventListener('keydown', e => { if (e.key === 'Escape') closePluginDropdown(); });
 
 
@@ -1191,10 +1235,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Boot
     try {
-        const steps = await (await fetch(`${API_BASE}/load`)).json();
-        try {
-            state.pluginCache = await (await fetch(`${API_BASE}/list_plugins`)).json();
-        } catch (_) {}
+        const [steps, modules, fns] = await Promise.all([
+            fetch(`${API_BASE}/load`).then(r => r.json()),
+            fetch(`${API_BASE}/list_plugins`).then(r => r.json()).catch(() => []),
+            fetch(`${API_BASE}/list_functions`).then(r => r.json()).catch(() => []),
+        ]);
+        state.pluginCache   = modules;
+        state.functionCache = fns;
         renderSequence(steps);
         if (steps.length) log(`Restored ${steps.length} step(s) from last session.`);
     } catch (_) { log('No previous session found.', 'system'); }

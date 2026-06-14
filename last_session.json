@@ -2,21 +2,25 @@
     {
         "pluginKey": "laser_utils.remove_flatcam_preamble",
         "description": "",
-        "isChecked": true
+        "isChecked": true,
+        "args": {}
     },
     {
         "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
         "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
-        "isChecked": true
+        "isChecked": true,
+        "args": {}
     },
     {
         "pluginKey": "laser_utils.inject_laser_power_on_z_moves",
         "description": "Inject laser on/off at G1 Z0.00 / G0 Z1.00 transitions",
-        "isChecked": true
+        "isChecked": true,
+        "args": {}
     },
     {
         "pluginKey": "laser_utils.add_laser_header_footer",
         "description": "Wrap with HOME_PRINTER + GRAB_LASER header and shutdown footer",
-        "isChecked": true
+        "isChecked": true,
+        "args": {}
     }
 ]

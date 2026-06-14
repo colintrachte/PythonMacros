@@ -678,6 +678,53 @@ main { flex-grow: 1; padding: 32px 24px; }
 }
 .step-delete:hover { background: var(--danger-dim); border-color: rgba(255,85,85,0.3); color: var(--danger); }
 
+.step-args {
+    display:        flex;
+    flex-wrap:      wrap;
+    gap:            6px 12px;
+    margin-top:     6px;
+    padding:        6px 8px;
+    background:     var(--surface-3);
+    border:         1px solid var(--border-subtle);
+    border-radius:  6px;
+}
+
+.step-arg-row {
+    display:     flex;
+    align-items: center;
+    gap:         6px;
+    cursor:      default;
+}
+
+.step-arg-label {
+    font-family: var(--sans);
+    font-size:   11px;
+    color:       var(--text-dim);
+    white-space: nowrap;
+}
+
+.step-arg-input[type="number"] {
+    width:        72px;
+    padding:      2px 6px;
+    font-family:  var(--mono);
+    font-size:    12px;
+    color:        var(--text-primary);
+    background:   var(--surface-2);
+    border:       1px solid var(--border);
+    border-radius:4px;
+    outline:      none;
+    text-align:   right;
+}
+.step-arg-input[type="number"]:focus {
+    border-color: var(--accent);
+}
+
+.step-arg-input[type="checkbox"] {
+    width: 14px; height: 14px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
 .sortable-ghost { opacity: 0; }
 .sortable-drag  { opacity: 1; box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important; border-color: var(--accent) !important; }
 

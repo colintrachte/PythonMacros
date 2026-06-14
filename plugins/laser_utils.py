@@ -5,8 +5,7 @@ Mix of legacy list[str] -> list[str] functions (auto-wrapped by the loader)
 and one new-style Payload function that demonstrates writing to payload.meta.
 """
 
-# Import Payload only for type-annotated functions; the loader needs the
-# annotation to distinguish new-style from legacy signatures.
+import re
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app import Payload   # pragma: no cover
@@ -78,29 +77,31 @@ convert_to_klipper_format.plugin_meta = {
 def add_laser_header_footer(lines):
     """Wrap the file with laser homing, tool pickup, power-off, and drop-off."""
     header = ['HOME_PRINTER\n', 'GRAB_LASER\n']
-    footer = ['SET_PIN PIN=laser VALUE=0\n', 'HOME_XY\n', 'TOOL_DROPOFF\n']
+    footer = ['SET_PIN PIN=laser VALUE=0\n', '_HOME_XY\n', '_TOOL_DROPOFF\n']
     return header + lines + footer
 
 add_laser_header_footer.plugin_meta = {
     "label":       "Add laser header + footer",
-    "description": "Prepends HOME_PRINTER / GRAB_LASER and appends power-off / HOME_XY / TOOL_DROPOFF.",
+    "description": "Prepends HOME_PRINTER / GRAB_LASER and appends power-off / _HOME_XY / _TOOL_DROPOFF.",
 }
 
 
-def inject_laser_power_on_z_moves(lines):
+def inject_laser_power_on_z_moves(lines, power=0.4, engrave_z=0.0, travel_z=1.0):
     """
     Inject laser power commands around Z-height transitions.
 
-    G1 Z0.00 ...  → keep line, then SET_PIN PIN=laser VALUE=0.4  (laser on at engrave depth)
-    G0/G1 Z1.00 ...  → SET_PIN PIN=laser VALUE=0 first, then keep the lift move (laser off for travel)
+    G1 Z<engrave_z> → keep line, then SET_PIN PIN=laser VALUE=<power>
+    G0/G1 Z<travel_z> → SET_PIN PIN=laser VALUE=0 first, then keep the lift move
     """
+    ez = f"Z{engrave_z:.2f}"
+    tz = f"Z{travel_z:.2f}"
     result = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("G1 Z0.00"):
+        if stripped.startswith(f"G1 {ez}"):
             result.append(line)
-            result.append("SET_PIN PIN=laser VALUE=0.4\n")
-        elif stripped.startswith("G0 Z1.00") or stripped.startswith("G1 Z1.00"):
+            result.append(f"SET_PIN PIN=laser VALUE={power}\n")
+        elif stripped.startswith(f"G0 {tz}") or stripped.startswith(f"G1 {tz}"):
             result.append("SET_PIN PIN=laser VALUE=0\n")
             result.append(line)
         else:
@@ -110,8 +111,8 @@ def inject_laser_power_on_z_moves(lines):
 inject_laser_power_on_z_moves.plugin_meta = {
     "label":       "Inject laser power on Z transitions",
     "description": (
-        "Turns the laser on (VALUE=0.4) after each G1 Z0.00 descent and "
-        "off (VALUE=0) in place of each G0 Z1.00 lift."
+        "Turns the laser on after each engrave-depth descent and "
+        "off before each travel lift."
     ),
 }
 
@@ -142,5 +143,88 @@ count_laser_on_segments.plugin_meta = {
     "description": (
         "Counts SET_PIN laser VALUE>0 occurrences, stores the result in "
         "payload.meta['laser_segment_count'], and appends it as a comment."
+    ),
+}
+
+
+# ── Grid tiling ────────────────────────────────────────────────────────────
+
+def _shift_body(body, dx, dy):
+    """Shift every G0/G1 X and Y coordinate in a body block by (dx, dy)."""
+    shifted = []
+    for line in body:
+        s = line.strip()
+        if s.startswith('G0') or s.startswith('G1'):
+            def replace_coord(m, _dx=dx, _dy=dy):
+                axis = m.group(1)
+                return f'{axis}{float(m.group(2)) + (_dx if axis == "X" else _dy):.2f}'
+            line = re.sub(r'([XY])(-?\d+(?:\.\d+)?)', replace_coord, line)
+        shifted.append(line)
+    return shifted
+
+
+def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0):
+    """
+    Tile the laser artwork in a grid to fill the PCB and bake shifted coordinates
+    into one file.
+
+    Run this step AFTER add_laser_header_footer and inject_laser_power_on_z_moves.
+    Auto-detects artwork extents from G0/G1 X/Y values in the body, computes
+    cols = floor(pcb_width / (art_width + gap)) and the same for rows, then
+    duplicates the body for each cell with coordinates shifted by col/row offsets.
+    """
+    # Locate header end (line after GRAB_LASER)
+    header_end = 0
+    for i, line in enumerate(lines):
+        if line.strip() == 'GRAB_LASER':
+            header_end = i + 1
+            break
+
+    # Footer is always the last 3 fixed lines added by add_laser_header_footer
+    if (len(lines) >= 3
+            and lines[-1].strip() == '_TOOL_DROPOFF'
+            and lines[-2].strip() == '_HOME_XY'
+            and lines[-3].strip() == 'SET_PIN PIN=laser VALUE=0'):
+        footer_start = len(lines) - 3
+    else:
+        footer_start = len(lines)
+
+    header = lines[:header_end]
+    body   = lines[header_end:footer_start]
+    footer = lines[footer_start:]
+
+    # Auto-detect artwork extents
+    x_vals, y_vals = [], []
+    for line in body:
+        s = line.strip()
+        if s.startswith('G0') or s.startswith('G1'):
+            for m in re.finditer(r'X(-?\d+(?:\.\d+)?)', s):
+                x_vals.append(float(m.group(1)))
+            for m in re.finditer(r'Y(-?\d+(?:\.\d+)?)', s):
+                y_vals.append(float(m.group(1)))
+
+    if not x_vals or not y_vals:
+        return lines
+
+    art_w = max(x_vals) - min(x_vals)
+    art_h = max(y_vals) - min(y_vals)
+    cols = max(1, int(pcb_width  / (art_w + gap)))
+    rows = max(1, int(pcb_height / (art_h + gap)))
+
+    new_body = []
+    for row in range(rows):
+        for col in range(cols):
+            dx = col * (art_w + gap)
+            dy = row * (art_h + gap)
+            new_body.extend(body if (dx == 0 and dy == 0) else _shift_body(body, dx, dy))
+
+    return header + new_body + footer
+
+make_laser_grid.plugin_meta = {
+    "label":       "Tile grid — fill PCB",
+    "description": (
+        "Duplicates the laser body in a grid that fills the PCB. "
+        "Coordinates are baked in; no Klipper macro changes needed. "
+        "Run after 'Add laser header + footer' and 'Inject laser power on Z transitions'."
     ),
 }

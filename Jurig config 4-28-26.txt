@@ -1,37 +1,41 @@
 # =============================================================================
-# REFACTORED KLIPPER CONFIG
-# Fixes: TOOL_LOCK GRIP bug, M6 tool variable, dual extrusion T0/T1,
-#        laser test mode, Z_TILT, input shaper, pressure advance per-tool,
-#        HOME_PRINTER mesh+tilt, laser Z guard, PAUSE laser shutoff,
-#        DEEP_LASER_CUT floor limit, exclude_object
-# Review pass: min_temp safety, fade_end, z_tilt retries, ghost-tool guard,
-#              laser Z homing check, STARTUP_CHECK macro
+# REFACTORED KLIPPER CONFIG  (UI cleanup pass)
+#
+# UI cleanup: internal/helper macros renamed with a leading underscore so
+# Mainsail/Fluidd hide them from the macro button panel. Only operator-facing
+# macros remain visible. Standard gcode overrides (M3/M5/M6/M106/M107/G1/
+# PAUSE/RESUME/CANCEL_PRINT/T0) keep their exact names -- they must, to
+# intercept the corresponding commands -- and do not render as buttons anyway.
+#
+# Renamed internal macros (now hidden):
+#   INIT -> _INIT, STARTUP_CHECK -> _STARTUP_CHECK,
+#   STARTUP_STATE -> _STARTUP_STATE, LOCK_INIT -> _LOCK_INIT,
+#   DOCK_INIT -> _DOCK_INIT, LASER_MODE_INIT -> _LASER_MODE_INIT,
+#   LASER_LAYER_TICK -> _LASER_LAYER_TICK, TOOL_LOCK -> _TOOL_LOCK,
+#   TOOL_UNLOCK -> _TOOL_UNLOCK, HOME_TOOLCHANGER -> _HOME_TOOLCHANGER,
+#   HOME_XY -> _HOME_XY, TOOL_HOME -> _TOOL_HOME,
+#   TOOL_PICKUP -> _TOOL_PICKUP, TOOL_DROPOFF -> _TOOL_DROPOFF,
+#   M05 -> _DOCK_DRILL_ALIAS (removed; was a stray duplicate)
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# EXCLUDE OBJECT  [item 12]
-# -----------------------------------------------------------------------------
+# EXCLUDE OBJECT
 [exclude_object]
 # Slicer: enable "Label Objects" in PrusaSlicer / "Add object definitions"
 # in SuperSlicer. OrcaSlicer enables this by default.
 
-# -----------------------------------------------------------------------------
 # STARTUP
-# -----------------------------------------------------------------------------
 [delayed_gcode my_delayed_gcode]
 initial_duration: 1.0
 gcode:
-    # STARTUP_CHECK prints a console warning to inspect the carriage after restart.
-    # It does NOT block homing — operator must visually confirm before moving.
-    STARTUP_CHECK
-    INIT
+    # _STARTUP_CHECK prints a console warning to inspect the carriage after
+    # restart. It does NOT block homing -- operator must visually confirm.
+    _STARTUP_CHECK
+    _INIT
 
 [force_move]
 enable_force_move: True
 
-# -----------------------------------------------------------------------------
 # FILAMENT SENSOR
-# -----------------------------------------------------------------------------
 [filament_switch_sensor my_sensor]
 pause_on_runout: True
 runout_gcode:
@@ -46,12 +50,12 @@ switch_pin: !z:P1.25
 rename_existing: G1.6160
 gcode:
     {% if 'X' in params %}
-        {% set bypass = printer["gcode_macro DOCK_INIT"].clearance_bypass %}
+        {% set bypass = printer["gcode_macro _DOCK_INIT"].clearance_bypass %}
         {% set homed = 'x' in printer.toolhead.homed_axes %}
         {% if not bypass and homed %}
             {% set tx = params.X|float %}
-            {% set cl = printer["gcode_macro DOCK_INIT"].clear_left|float %}
-            {% set cr = printer["gcode_macro DOCK_INIT"].clear_right|float %}
+            {% set cl = printer["gcode_macro _DOCK_INIT"].clear_left|float %}
+            {% set cr = printer["gcode_macro _DOCK_INIT"].clear_right|float %}
             {% set rail_min = -143.8 %}
             {% set rail_max = 143.8 %}
             {% if (tx - cl) < rail_min %}
@@ -63,9 +67,7 @@ gcode:
     {% endif %}
     G1.6160 {rawparams}
 
-# -----------------------------------------------------------------------------
 # IDLE TIMEOUT
-# -----------------------------------------------------------------------------
 [idle_timeout]
 gcode:
     { action_respond_info("Idle Timeout Reached!") }
@@ -73,31 +75,27 @@ gcode:
     M107 P1
     {% if 'xyz' in printer.toolhead.homed_axes %}
         G90
-        {% if printer["gcode_macro DOCK_INIT"].tool_present %}
-            TOOL_DROPOFF
-        {% elif printer["gcode_macro LOCK_INIT"].lock_state %}
-            TOOL_UNLOCK
+        {% if printer["gcode_macro _DOCK_INIT"].tool_present %}
+            _TOOL_DROPOFF
+        {% elif printer["gcode_macro _LOCK_INIT"].lock_state %}
+            _TOOL_UNLOCK
         {% endif %}
     {% endif %}
     M84
 timeout: 600
 
-# -----------------------------------------------------------------------------
 # PRINTER KINEMATICS
-# -----------------------------------------------------------------------------
 [printer]
 kinematics: corexy
 max_velocity: 200
 max_accel: 4000
-# NOTE: re-run INPUT_SHAPER_CALIBRATE after enabling ADXL345 — may allow
-# raising max_accel to 8000–12000 depending on frame resonance.
+# NOTE: re-run INPUT_SHAPER_CALIBRATE after enabling ADXL345 -- may allow
+# raising max_accel to 8000-12000 depending on frame resonance.
 max_z_velocity: 15
 max_z_accel: 100
 square_corner_velocity: 5.0
 
-# -----------------------------------------------------------------------------
 # MCUs
-# -----------------------------------------------------------------------------
 [mcu]
 serial: /dev/serial/by-id/usb-Klipper_stm32f103xe_36FFD6054242343822551457-if00
 
@@ -110,11 +108,9 @@ serial: /dev/serial/by-id/usb-Klipper_lpc1769_0E40010EA0A447AF09B0155DC02000F5-i
 [mcu mega]
 serial: /dev/serial/by-id/usb-Arduino__www.arduino.cc__0042_75031303431351B0A222-if00
 
-# -----------------------------------------------------------------------------
-# INPUT SHAPER / ADXL345  [item 5]
+# INPUT SHAPER / ADXL345
 # Uncomment after physically mounting ADXL345 to the toolhead.
-# Run: SHAPER_CALIBRATE  — then paste the recommended values below.
-# -----------------------------------------------------------------------------
+# Run: SHAPER_CALIBRATE  -- then paste the recommended values below.
 #[mcu rpi]
 #serial: /tmp/klipper_host_mcu
 
@@ -137,9 +133,7 @@ serial: /dev/serial/by-id/usb-Arduino__www.arduino.cc__0042_75031303431351B0A222
 #shaper_type: mzv
 # After calibrating, update max_accel in [printer] to the recommended value.
 
-# -----------------------------------------------------------------------------
-# STEPPERS — X / Y
-# -----------------------------------------------------------------------------
+# STEPPERS -- X / Y
 [stepper_x]
 step_pin: PC6
 dir_pin: PB15
@@ -166,9 +160,7 @@ position_max: 140
 position_min: -195
 homing_speed: 50
 
-# -----------------------------------------------------------------------------
-# STEPPERS — Z (3-screw independent leveling)
-# -----------------------------------------------------------------------------
+# STEPPERS -- Z (3-screw independent leveling)
 [stepper_z]
 step_pin: z:P2.2
 dir_pin: z:P2.6
@@ -196,12 +188,10 @@ enable_pin: !z:P0.21
 microsteps: 16
 rotation_distance: 1
 
-# -----------------------------------------------------------------------------
 # Z TILT (3-screw automatic leveling)
-#
 # Coupling positions derived from actual axis limits in this config:
-#   X range: -142 to +158  → X span = 300mm → X center = (-142+158)/2 = 8
-#   Y range (bed): -160 to +140 → Y span = 300mm → Y center = (-160+140)/2 = -10
+#   X range: -142 to +158  -> X span = 300mm -> X center = (-142+158)/2 = 8
+#   Y range (bed): -160 to +140 -> Y span = 300mm -> Y center = (-160+140)/2 = -10
 #
 # Jubilee standard 3-point layout: couplings at 150mm from bed center,
 # front-left, front-right, and back-center (positive Y direction).
@@ -214,7 +204,6 @@ rotation_distance: 1
 #
 # Probe points: nozzle positioned so probe (offset X+1, Y+30) lands ~30mm
 # inward from each coupling. Points must stay within bed_mesh bounds.
-# -----------------------------------------------------------------------------
 [z_tilt]
 z_positions:
     -142, -160   # stepper_z   front-left  coupling
@@ -229,9 +218,7 @@ horizontal_move_z: 5
 retries: 8
 retry_tolerance: 0.02
 
-# -----------------------------------------------------------------------------
 # PROBE & BED MESH
-# -----------------------------------------------------------------------------
 [probe]
 pin: z:P1.26
 x_offset: 1
@@ -254,9 +241,7 @@ fade_start: 0
 fade_end: 1
 fade_target: 0
 
-# -----------------------------------------------------------------------------
 # MANUAL STEPPERS
-# -----------------------------------------------------------------------------
 [manual_stepper tool_lock]
 step_pin: PB10
 dir_pin: !PB2
@@ -283,9 +268,7 @@ microsteps: 8
 rotation_distance: 40
 gear_ratio: 40:1
 
-# -----------------------------------------------------------------------------
-# EXTRUDER 0 — primary hotend (Tool 0)
-# -----------------------------------------------------------------------------
+# EXTRUDER 0 -- primary hotend (Tool 0)
 [extruder]
 step_pin: tools:P2.13
 dir_pin: !tools:P0.11
@@ -307,7 +290,7 @@ max_temp: 350
 max_extrude_only_distance: 5000
 # Tune per-filament: run PRESSURE_ADVANCE_CALIBRATE or tower test.
 # Values below are starting points only.
-pressure_advance: 0.04          # PLA default — adjust per material
+pressure_advance: 0.04          # PLA default -- adjust per material
 pressure_advance_smooth_time: 0.040
 
 [heater_fan fan0]
@@ -321,9 +304,7 @@ check_gain_time: 120
 hysteresis: 20
 max_error: 500
 
-# -----------------------------------------------------------------------------
-# EXTRUDER 1 — second hotend (Tool 0 dual, or independent T1 head)
-# -----------------------------------------------------------------------------
+# EXTRUDER 1 -- second hotend (Tool 0 dual, or independent T1 head)
 [extruder1]
 step_pin: tools:P1.15
 dir_pin: !tools:P1.14
@@ -357,9 +338,7 @@ check_gain_time: 120
 hysteresis: 20
 max_error: 500
 
-# -----------------------------------------------------------------------------
 # BED
-# -----------------------------------------------------------------------------
 [heater_bed]
 heater_pin: z:P2.5
 sensor_type: EPCOS 100K B57560G104F
@@ -371,16 +350,12 @@ pid_Kd: 989.125
 min_temp: 0
 max_temp: 100
 
-# -----------------------------------------------------------------------------
 # SERVO
-# -----------------------------------------------------------------------------
 [servo my_servo]
 pin: tools:P2.0
 initial_angle: 0
 
-# -----------------------------------------------------------------------------
 # OUTPUT PINS
-# -----------------------------------------------------------------------------
 [output_pin enable0]
 pin: mega:PK6
 value: 1
@@ -424,9 +399,7 @@ pin: mega:PA7
 value: 1
 shutdown_value: 1
 
-# -----------------------------------------------------------------------------
 # PAUSE / RESUME / CANCEL
-# -----------------------------------------------------------------------------
 [pause_resume]
 [display_status]
 [virtual_sdcard]
@@ -436,9 +409,8 @@ path: ~/printer_data/gcodes
 # GCODE MACROS
 # =============================================================================
 
-# -----------------------------------------------------------------------------
 # UTILITY ALIASES
-# -----------------------------------------------------------------------------
+# G00 / G01 are gcode-command overrides -- not buttons. Kept as-is.
 [gcode_macro G00]
 gcode:
     G1 {% for k, v in params.items() %}{k}={v} {% endfor %}
@@ -447,15 +419,13 @@ gcode:
 gcode:
     G1 {% for k, v in params.items() %}{k}={v} {% endfor %}
 
-[gcode_macro M05]
-gcode:
-    DOCK_DRILL
-
 [gcode_macro TEST_SWITCHES]
+description: Query all endstop switches
 gcode:
     QUERY_ENDSTOPS
 
-[gcode_macro DUMP_VARS]
+[gcode_macro _DUMP_VARS]
+description: Dump all printer state vars (diagnostic; hidden)
 gcode:
     {% for name1 in printer %}
         {% for name2 in printer[name1] %}
@@ -463,14 +433,12 @@ gcode:
         {% endfor %}
     {% endfor %}
 
-[gcode_macro RST_ZERO]
-description: Reset position to zero
+[gcode_macro _RST_ZERO]
+description: Reset kinematic position to zero (diagnostic; hidden)
 gcode:
     SET_KINEMATIC_POSITION X=0 Y=0 Z=0
 
-# -----------------------------------------------------------------------------
 # BLOWER FAN
-# -----------------------------------------------------------------------------
 [gcode_macro SET_BLOWER_SPEED]
 description: Set reversible blower speed and direction
 gcode:
@@ -505,93 +473,84 @@ gcode:
         {% endif %}
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# LASER TEST MODE  [item 4]
-#
+# LASER TEST MODE
 # Usage:
-#   LASER_TEST_ON            — enables test mode (forces 1% power)
-#   LASER_TEST_ON LAYERS=10  — auto-disable after 10 layers
-#   LASER_TEST_OFF           — disables test mode (normal power resumes)
+#   LASER_TEST_ON            -- enables test mode (forces 1% power)
+#   LASER_TEST_ON LAYERS=10  -- auto-disable after 10 layers
+#   LASER_TEST_OFF           -- disables test mode (normal power resumes)
 #
 # When test mode is active, M3 ignores the S value from gcode and fires
-# at LASER_TEST_POWER (default 0.01 = 1%) regardless of what the slicer sends.
-# M3 will display a warning in the console every time it intercepts a value.
-# -----------------------------------------------------------------------------
-[gcode_macro LASER_MODE_INIT]
+# at test_power (default 0.01 = 1%) regardless of what the slicer sends.
+[gcode_macro _LASER_MODE_INIT]
 variable_test_mode: False
 variable_test_power: 0.01
 variable_test_layers_remaining: 0
 gcode:
-    # State holder — no action on its own
+    # State holder -- no action on its own
 
 [gcode_macro LASER_TEST_ON]
 description: Force laser to 1% power regardless of gcode S value
 gcode:
     {% set layers = params.LAYERS|default(0)|int %}
-    SET_GCODE_VARIABLE MACRO=LASER_MODE_INIT VARIABLE=test_mode VALUE=True
-    SET_GCODE_VARIABLE MACRO=LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE={layers}
+    SET_GCODE_VARIABLE MACRO=_LASER_MODE_INIT VARIABLE=test_mode VALUE=True
+    SET_GCODE_VARIABLE MACRO=_LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE={layers}
     {% if layers > 0 %}
-        M117 LASER TEST MODE ON — auto-off after {layers} layers
+        M117 LASER TEST MODE ON -- auto-off after {layers} layers
         { action_respond_info("Laser test mode ON. Will auto-disable after %d layers." % layers) }
     {% else %}
-        M117 LASER TEST MODE ON — manual off required
+        M117 LASER TEST MODE ON -- manual off required
         { action_respond_info("Laser test mode ON. Call LASER_TEST_OFF to disable.") }
     {% endif %}
 
 [gcode_macro LASER_TEST_OFF]
 description: Return laser to normal gcode-controlled power
 gcode:
-    SET_GCODE_VARIABLE MACRO=LASER_MODE_INIT VARIABLE=test_mode VALUE=False
-    SET_GCODE_VARIABLE MACRO=LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE=0
-    M117 Laser test mode OFF — normal power
+    SET_GCODE_VARIABLE MACRO=_LASER_MODE_INIT VARIABLE=test_mode VALUE=False
+    SET_GCODE_VARIABLE MACRO=_LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE=0
+    M117 Laser test mode OFF -- normal power
     { action_respond_info("Laser test mode OFF. Normal power restored.") }
 
-[gcode_macro LASER_LAYER_TICK]
-description: Call from slicer layer-change gcode to count down test-mode layers
+[gcode_macro _LASER_LAYER_TICK]
+description: Count down test-mode layers (call from slicer layer-change; hidden)
 gcode:
-    {% set remaining = printer["gcode_macro LASER_MODE_INIT"].test_layers_remaining %}
-    {% if printer["gcode_macro LASER_MODE_INIT"].test_mode and remaining > 0 %}
+    {% set remaining = printer["gcode_macro _LASER_MODE_INIT"].test_layers_remaining %}
+    {% if printer["gcode_macro _LASER_MODE_INIT"].test_mode and remaining > 0 %}
         {% set new_remaining = remaining - 1 %}
-        SET_GCODE_VARIABLE MACRO=LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE={new_remaining}
+        SET_GCODE_VARIABLE MACRO=_LASER_MODE_INIT VARIABLE=test_layers_remaining VALUE={new_remaining}
         M117 Laser test mode: {new_remaining} layers remaining
         {% if new_remaining <= 0 %}
             LASER_TEST_OFF
         {% endif %}
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# TOOL ACTIVATION — M3 / M5  [items 1, 4]
-#
-# Fix: M6 now correctly sets DOCK_INIT.tool so M3 knows which tool is active.
-# Fix: Laser fires only within safe Z range (-1 to 5mm by default).
-# Fix: Test mode intercepts S value and forces 1% when active.
-# -----------------------------------------------------------------------------
+# TOOL ACTIVATION -- M3 / M5
+# gcode-command overrides -- not buttons.
 [gcode_macro M3]
 description: Activate active tool (spindle/laser/drill) with optional power S
 gcode:
-    {% set tool = printer["gcode_macro DOCK_INIT"].tool %}
+    {% set tool = printer["gcode_macro _DOCK_INIT"].tool %}
     {% set s_raw = params.S|default(100)|float %}
-    {% set test_mode = printer["gcode_macro LASER_MODE_INIT"].test_mode %}
-    {% set test_power = printer["gcode_macro LASER_MODE_INIT"].test_power %}
+    {% set test_mode = printer["gcode_macro _LASER_MODE_INIT"].test_mode %}
+    {% set test_power = printer["gcode_macro _LASER_MODE_INIT"].test_power %}
 
     M117 Tool={tool} S={s_raw}
 
     {% if tool == 0 %}
-        # Hotend — M3 not used, ignore silently
+        # Hotend -- M3 not used, ignore silently
 
     {% elif tool == 1 %}
         # ---- LASER ----
-        # Z safety guard: only check if Z is homed — avoids spurious block on
+        # Z safety guard: only check if Z is homed -- avoids spurious block on
         # unhomed axes or during initial setup moves.
         {% set is_homed = 'z' in printer.toolhead.homed_axes %}
         {% if not is_homed %}
             { action_respond_info("LASER BLOCKED: Z axis not homed. Home before firing laser.") }
-            M117 LASER BLOCKED — not homed
+            M117 LASER BLOCKED -- not homed
         {% else %}
             {% set cur_z = printer.toolhead.position.z %}
             {% if cur_z > 5.0 or cur_z < -1.0 %}
                 { action_respond_info("LASER BLOCKED: Z=%.2f is outside safe range (-1 to 5mm). Check focal height." % cur_z) }
-                M117 LASER BLOCKED — bad Z height
+                M117 LASER BLOCKED -- bad Z height
             {% else %}
                 {% if test_mode %}
                     { action_respond_info("LASER TEST MODE: overriding S=%.3f with %.3f (1%%)" % (s_raw, test_power)) }
@@ -621,9 +580,7 @@ gcode:
     SET_PIN PIN=end_mill VALUE=0
     SET_PIN PIN=drill VALUE=0
 
-# -----------------------------------------------------------------------------
-# DUAL EXTRUSION — T0 / T1  [item 3]
-#
+# DUAL EXTRUSION -- T0 / T1
 # Physical XY offset between nozzle 0 and nozzle 1 must be measured.
 # Procedure:
 #   1. Home printer, load filament in both extruders.
@@ -631,28 +588,23 @@ gcode:
 #   3. Call EXTRUDER1_ACTIVATE, print the same square without moving the bed.
 #   4. Measure the offset between the two squares with calipers.
 #   5. Update nozzle_offset_x/y/z variables in EXTRUDER1_ACTIVATE below.
-#
-# These offsets are applied via SET_GCODE_OFFSET relative to T0 home.
-# Pressure advance values are set per-tool on activation.
-# -----------------------------------------------------------------------------
 [gcode_macro T0]
 description: Activate extruder 0 (primary hotend)
 gcode:
     ACTIVATE_EXTRUDER EXTRUDER=extruder
     SET_GCODE_OFFSET X=0 Y=0 Z=0 MOVE=1
     SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE=0.04
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool VALUE=0
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool VALUE=0
     M117 Active: T0 extruder
 
 # T1 is reserved by Klipper as a toolchange alias (same as M6 T1).
 # The second hotend on the same carriage is activated via EXTRUDER1_ACTIVATE.
-# Call this explicitly in dual-print gcode or from the console.
-# PLACEHOLDER OFFSETS — measure your machine before use.
+# PLACEHOLDER OFFSETS -- measure your machine before use.
 [gcode_macro EXTRUDER1_ACTIVATE]
 description: Switch to extruder 1 on same carriage (dual extrusion)
-variable_nozzle_offset_x: 0.0   # <-- replace with measured value (mm)
-variable_nozzle_offset_y: 0.0   # <-- replace with measured value (mm)
-variable_nozzle_offset_z: 0.0   # <-- replace with measured value (mm)
+variable_nozzle_offset_x: 0.0   # replace with measured value (mm)
+variable_nozzle_offset_y: 0.0   # replace with measured value (mm)
+variable_nozzle_offset_z: 0.0   # replace with measured value (mm)
 gcode:
     ACTIVATE_EXTRUDER EXTRUDER=extruder1
     {% set ox = printer["gcode_macro EXTRUDER1_ACTIVATE"].nozzle_offset_x %}
@@ -662,7 +614,6 @@ gcode:
     SET_PRESSURE_ADVANCE EXTRUDER=extruder1 ADVANCE=0.04
     M117 Active: extruder1 (offset X{ox} Y{oy} Z{oz})
 
-# Return to extruder 0 and clear offsets after a dual-extrusion move.
 [gcode_macro EXTRUDER0_ACTIVATE]
 description: Switch back to extruder 0, clear nozzle offsets
 gcode:
@@ -671,15 +622,13 @@ gcode:
     SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE=0.04
     M117 Active: extruder0
 
-# -----------------------------------------------------------------------------
-# TOOLCHANGER STATE
-# -----------------------------------------------------------------------------
-[gcode_macro LOCK_INIT]
+# TOOLCHANGER STATE  (hidden)
+[gcode_macro _LOCK_INIT]
 variable_lock_state: True
 gcode:
-    SET_GCODE_VARIABLE MACRO=LOCK_INIT VARIABLE=lock_state VALUE=False
+    SET_GCODE_VARIABLE MACRO=_LOCK_INIT VARIABLE=lock_state VALUE=False
 
-[gcode_macro DOCK_INIT]
+[gcode_macro _DOCK_INIT]
 variable_tool_present: False
 variable_tool_zone_x: 0
 variable_tool_zone_y: 0
@@ -695,29 +644,18 @@ variable_clear_right: 30
 variable_clearance_bypass: False
 gcode:
 
-# -----------------------------------------------------------------------------
-# STARTUP CHECK — Ghost Tool Guard
-#
+# STARTUP CHECK -- Ghost Tool Guard  (hidden)
 # Called at boot via delayed_gcode. Klipper resets all gcode_macro variables
-# on restart, so DOCK_INIT.tool_present is always False after a power cycle,
+# on restart, so _DOCK_INIT.tool_present is always False after a power cycle,
 # even if a tool is physically in the gripper.
 #
-# This macro cannot auto-detect a held tool without a physical sensor. Instead
-# it warns the operator and requires acknowledgement before any homing moves.
-#
-# To add a physical sensor: wire a microswitch to an unused endstop pin,
-# define it as [filament_switch_sensor tool_detect] or read it via
-# [gcode_button], then replace the warning below with a real pin check.
-#
-# Operator acknowledges by calling STARTUP_CONFIRM in the console, or by
-# running STARTUP_CHECK_CLEAR if the carriage is visually confirmed empty.
-# -----------------------------------------------------------------------------
-[gcode_macro STARTUP_STATE]
+# Operator acknowledges via STARTUP_CLEAR (visible) once carriage is verified.
+[gcode_macro _STARTUP_STATE]
 variable_confirmed: False
 gcode:
 
-[gcode_macro STARTUP_CHECK]
-description: Warn operator to verify carriage state after power cycle
+[gcode_macro _STARTUP_CHECK]
+description: Warn operator to verify carriage state after power cycle (hidden)
 gcode:
     { action_respond_info("") }
     { action_respond_info("=== STARTUP CHECK ===") }
@@ -725,74 +663,68 @@ gcode:
     { action_respond_info("If a tool was in the gripper at shutdown, it may still be held.") }
     { action_respond_info("Visually inspect the carriage before homing.") }
     { action_respond_info("  - Carriage is EMPTY:  run STARTUP_CLEAR") }
-    { action_respond_info("  - Tool IS in gripper: run TOOL_UNLOCK manually, dock it, then STARTUP_CLEAR") }
+    { action_respond_info("  - Tool IS in gripper: manually unlock via console (_TOOL_UNLOCK), dock it, then STARTUP_CLEAR") }
     { action_respond_info("=====================") }
-    M117 STARTUP: verify carriage — see console
-    SET_GCODE_VARIABLE MACRO=STARTUP_STATE VARIABLE=confirmed VALUE=False
+    M117 STARTUP: verify carriage -- see console
+    SET_GCODE_VARIABLE MACRO=_STARTUP_STATE VARIABLE=confirmed VALUE=False
 
 [gcode_macro STARTUP_CLEAR]
 description: Confirm carriage is empty and release startup hold
 gcode:
-    SET_GCODE_VARIABLE MACRO=STARTUP_STATE VARIABLE=confirmed VALUE=True
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_present VALUE=False
-    SET_GCODE_VARIABLE MACRO=LOCK_INIT VARIABLE=lock_state VALUE=False
-    M117 Startup confirmed — ready to home
+    SET_GCODE_VARIABLE MACRO=_STARTUP_STATE VARIABLE=confirmed VALUE=True
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_present VALUE=False
+    SET_GCODE_VARIABLE MACRO=_LOCK_INIT VARIABLE=lock_state VALUE=False
+    M117 Startup confirmed -- ready to home
     { action_respond_info("Startup confirmed. tool_present=False. Safe to home.") }
 
-# Guard used by HOME_PRINTER to block homing until operator has confirmed.
+# Guard helper (hidden). Currently unused by HOME_PRINTER but kept available.
 [gcode_macro _ASSERT_STARTUP_CONFIRMED]
 gcode:
-    {% if not printer["gcode_macro STARTUP_STATE"].confirmed %}
+    {% if not printer["gcode_macro _STARTUP_STATE"].confirmed %}
         { action_raise_error("Startup not confirmed. Run STARTUP_CLEAR first (after visual inspection).") }
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# INIT
-# -----------------------------------------------------------------------------
-[gcode_macro INIT]
+# INIT  (hidden -- runs automatically at boot)
+[gcode_macro _INIT]
 gcode:
-    {% if printer["gcode_macro DOCK_INIT"].tool_present %}
-        TOOL_DROPOFF
-        { action_respond_info("Cannot run INIT with a tool present. Run TOOL_UNLOCK and manually dock the tool.") }
+    {% if printer["gcode_macro _DOCK_INIT"].tool_present %}
+        _TOOL_DROPOFF
+        { action_respond_info("Cannot run INIT with a tool present. Run _TOOL_UNLOCK (console) and manually dock the tool.") }
     {% else %}
-        LOCK_INIT
-        DOCK_INIT
-        LASER_MODE_INIT
+        _LOCK_INIT
+        _DOCK_INIT
+        _LASER_MODE_INIT
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# TOOL LOCK / UNLOCK
-#
-# Fix: TOOL_LOCK now reads GRIP from DOCK_INIT state variable instead of
-#      referencing an undefined local {GRIP}.  [item 1]
-# -----------------------------------------------------------------------------
-[gcode_macro TOOL_LOCK]
-# Pass GRIP as a parameter: TOOL_LOCK GRIP=-10
-# Reading from DOCK_INIT.tool_grip is NOT safe here because SET_GCODE_VARIABLE
-# commits asynchronously — the variable may still be 0 when this macro runs.
-# Passing the value directly from TOOL_PICKUP avoids the race entirely.
+# TOOL LOCK / UNLOCK  (hidden)
+# _TOOL_LOCK reads GRIP from a passed parameter, NOT from _DOCK_INIT state,
+# because SET_GCODE_VARIABLE commits asynchronously -- the variable may still
+# be 0 when this macro runs. Passing GRIP directly from _TOOL_PICKUP avoids
+# the race entirely.
+[gcode_macro _TOOL_LOCK]
+# Pass GRIP as a parameter: _TOOL_LOCK GRIP=-10
 gcode:
     {% set grip = params.GRIP|default(0)|float %}
     MANUAL_STEPPER STEPPER=tool_lock MOVE={grip} SPEED=50
-    SET_GCODE_VARIABLE MACRO=LOCK_INIT VARIABLE=lock_state VALUE=True
+    SET_GCODE_VARIABLE MACRO=_LOCK_INIT VARIABLE=lock_state VALUE=True
 
-[gcode_macro TOOL_UNLOCK]
+[gcode_macro _TOOL_UNLOCK]
 gcode:
     MANUAL_STEPPER STEPPER=tool_lock MOVE=-75 SPEED=50
-    SET_GCODE_VARIABLE MACRO=LOCK_INIT VARIABLE=lock_state VALUE=False
+    SET_GCODE_VARIABLE MACRO=_LOCK_INIT VARIABLE=lock_state VALUE=False
 
-# -----------------------------------------------------------------------------
 # HOMING
-# -----------------------------------------------------------------------------
-[gcode_macro HOME_TOOLCHANGER]
+# _HOME_TOOLCHANGER and _HOME_XY are internal steps (hidden).
+# HOME_PRINTER and LEVEL_BED are operator-facing (visible).
+[gcode_macro _HOME_TOOLCHANGER]
 gcode:
     G91
-    MANUAL_STEPPER STEPPER=tool_lock MOVE=100 SPEED=50 STOP_ON_ENDSTOP=2
+    MANUAL_STEPPER STEPPER=tool_lock MOVE=800 SPEED=300 STOP_ON_ENDSTOP=2
     G90
-    MANUAL_STEPPER STEPPER=tool_lock MOVE=0 SPEED=50 STOP_ON_ENDSTOP=2
-    MANUAL_STEPPER STEPPER=tool_lock MOVE=-75 SPEED=50
+    MANUAL_STEPPER STEPPER=tool_lock MOVE=0 SPEED=100 STOP_ON_ENDSTOP=2
+    MANUAL_STEPPER STEPPER=tool_lock MOVE=-75 SPEED=100
 
-[gcode_macro HOME_XY]
+[gcode_macro _HOME_XY]
 gcode:
     G90
     G28 X0
@@ -800,20 +732,20 @@ gcode:
     G28 Y0
 
 [gcode_macro HOME_PRINTER]
-description: Full home sequence with Z tilt and bed mesh  [item 7]
+description: Full home sequence with Z tilt and bed mesh
 gcode:
-    # NOTE: _ASSERT_STARTUP_CONFIRMED removed — it blocked homing after every restart.
-    # STARTUP_CHECK still runs at boot (via delayed_gcode) and prints a warning to the
-    # console. Operator is responsible for visual inspection; homing is not gated.
+    # NOTE: _ASSERT_STARTUP_CONFIRMED is intentionally NOT called here -- it
+    # would block homing after every restart. _STARTUP_CHECK still runs at boot
+    # and prints a console warning; operator handles visual inspection.
     SAVE_GCODE_STATE NAME=MY_STATE
-    HOME_TOOLCHANGER
-    HOME_XY
+    _HOME_TOOLCHANGER
+    _HOME_XY
     G1 Y75 F3000
     G1 X-80
     G28 Z0
     G1 Z5
-    # Level the bed — requires z_tilt section to be calibrated first.
-    # Comment out Z_TILT_ADJUST if z_tilt pivot coords are not yet measured.
+    # Level the bed -- requires z_tilt section to be calibrated first.
+    # Uncomment Z_TILT_ADJUST once z_tilt pivot coords are measured.
     #Z_TILT_ADJUST
     # Re-home Z after tilt correction
     G28 Z0
@@ -823,31 +755,26 @@ gcode:
     RESTORE_GCODE_STATE NAME=MY_STATE
 
 [gcode_macro LEVEL_BED]
+description: Home XY, tilt-level, and run a fresh bed mesh
 gcode:
-    HOME_XY
+    _HOME_XY
     #Z_TILT_ADJUST
     G28 Z0
     BED_MESH_CALIBRATE
 
-# -----------------------------------------------------------------------------
-# TOOL HOME (return position override)
-# -----------------------------------------------------------------------------
-[gcode_macro TOOL_HOME]
+# TOOL HOME (return position override)  (hidden)
+[gcode_macro _TOOL_HOME]
 gcode:
     {% if 'HOME' in params %}
         {% set home = params.HOME.split(',') %}
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_home_x VALUE={home[0]|float}
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_home_y VALUE={home[1]|float}
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_home_x VALUE={home[0]|float}
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_home_y VALUE={home[1]|float}
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# TOOL PICKUP
-#
-# Fix: now saves GRIP and GRIPP into DOCK_INIT variables so TOOL_LOCK can
-#      read them without a bare undefined reference.  [item 1]
-# Fix: sets DOCK_INIT.tool correctly for all tool numbers.  [item 2]
-# -----------------------------------------------------------------------------
-[gcode_macro TOOL_PICKUP]
+# TOOL PICKUP  (hidden -- driven by M6)
+# Saves GRIP/GRIPP into _DOCK_INIT vars and passes GRIP directly to _TOOL_LOCK.
+# Sets _DOCK_INIT.tool so M3 routes to the right output pin.
+[gcode_macro _TOOL_PICKUP]
 gcode:
     {% set ZONE_X   = params.ZONE_X|default(0)|float %}
     {% set ZONE_Y   = params.ZONE_Y|default(0)|float %}
@@ -863,29 +790,29 @@ gcode:
     {% set CLEAR_RIGHT = params.CLEAR_RIGHT|default(30)|float %}
 
     SAVE_GCODE_STATE NAME=tool_pickup_state
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=clearance_bypass VALUE=True
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=clearance_bypass VALUE=True
     {% set home = printer['gcode_move'].gcode_position %}
-    {% set home_x = printer["gcode_macro DOCK_INIT"].tool_home_x %}
-    {% set home_y = printer["gcode_macro DOCK_INIT"].tool_home_y %}
+    {% set home_x = printer["gcode_macro _DOCK_INIT"].tool_home_x %}
+    {% set home_y = printer["gcode_macro _DOCK_INIT"].tool_home_y %}
     {% if home_x is none or home_y is none %}
         {% set home_x = home.x %}
         {% set home_y = home.y %}
     {% endif %}
 
-    { action_respond_info("Picking up tool %d — home X%.1f Y%.1f Z%.1f" % (TOOL_NUM, home.x, home.y, home.z)) }
+    { action_respond_info("Picking up tool %d -- home X%.1f Y%.1f Z%.1f" % (TOOL_NUM, home.x, home.y, home.z)) }
 
-    # Save grip values into state (used by TOOL_DROPOFF and diagnostics)
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_grip  VALUE={GRIP}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_gripp VALUE={GRIPP}
+    # Save grip values into state (used by _TOOL_DROPOFF and diagnostics)
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_grip  VALUE={GRIP}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_gripp VALUE={GRIPP}
 
     # Move to zone then park
     G1 X{ZONE_X} F7200
     G1 Y{ZONE_Y} F7200
     G1 Y{PARK_Y} F1000
 
-    # Lock — GRIP passed directly as parameter (do NOT read from DOCK_INIT here;
-    # SET_GCODE_VARIABLE above may not have committed yet when TOOL_LOCK runs)
-    TOOL_LOCK GRIP={GRIP}
+    # Lock -- GRIP passed directly as parameter (do NOT read from _DOCK_INIT
+    # here; SET_GCODE_VARIABLE above may not have committed yet)
+    _TOOL_LOCK GRIP={GRIP}
     # Nudge and pull free
     G91
     G1 Y1
@@ -900,89 +827,90 @@ gcode:
     MANUAL_STEPPER STEPPER=tool_lock MOVE={GRIPP} SPEED=100
 
     # Save dock state
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_zone_x  VALUE={ZONE_X}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_zone_y  VALUE={ZONE_Y}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_park_x  VALUE={PARK_X}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_park_y  VALUE={PARK_Y}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_present VALUE=True
-    # Set active tool number so M3 routes correctly  [item 2]
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool         VALUE={TOOL_NUM}
-    SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=clearance_bypass VALUE=False
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_zone_x  VALUE={ZONE_X}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_zone_y  VALUE={ZONE_Y}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_park_x  VALUE={PARK_X}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_park_y  VALUE={PARK_Y}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_present VALUE=True
+    # Set active tool number so M3 routes correctly
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool         VALUE={TOOL_NUM}
+    SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=clearance_bypass VALUE=False
 
-# -----------------------------------------------------------------------------
-# TOOL DROPOFF
-# -----------------------------------------------------------------------------
-[gcode_macro TOOL_DROPOFF]
+# TOOL DROPOFF  (hidden -- driven by M6 with no T param, idle timeout, etc.)
+[gcode_macro _TOOL_DROPOFF]
 gcode:
     M5
     SET_PIN PIN=laser_enable VALUE=1
-    {% if printer["gcode_macro DOCK_INIT"].tool_present %}
+    {% if printer["gcode_macro _DOCK_INIT"].tool_present %}
         SAVE_GCODE_STATE NAME=tool_dropoff_state
         SET_GCODE_OFFSET X=0 Y=0
-        G1 X{printer["gcode_macro DOCK_INIT"].tool_zone_x} F7200
-        G1 Y{printer["gcode_macro DOCK_INIT"].tool_zone_y}
-        G1 X{printer["gcode_macro DOCK_INIT"].tool_park_x} F1000
-        G1 Y{printer["gcode_macro DOCK_INIT"].tool_park_y}
-        TOOL_UNLOCK
+        G1 X{printer["gcode_macro _DOCK_INIT"].tool_zone_x} F7200
+        G1 Y{printer["gcode_macro _DOCK_INIT"].tool_zone_y}
+        G1 X{printer["gcode_macro _DOCK_INIT"].tool_park_x} F1000
+        G1 Y{printer["gcode_macro _DOCK_INIT"].tool_park_y}
+        _TOOL_UNLOCK
         G91
         G1 Y0.5
         G90
-        G1 Y{printer["gcode_macro DOCK_INIT"].tool_zone_y} F7200
+        G1 Y{printer["gcode_macro _DOCK_INIT"].tool_zone_y} F7200
         G91
         G1 Y-0.5
         G90
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool_present VALUE=False
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=tool         VALUE=0
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=clear_left  VALUE=30
-        SET_GCODE_VARIABLE MACRO=DOCK_INIT VARIABLE=clear_right VALUE=30
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool_present VALUE=False
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=tool         VALUE=0
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=clear_left  VALUE=30
+        SET_GCODE_VARIABLE MACRO=_DOCK_INIT VARIABLE=clear_right VALUE=30
         RESTORE_GCODE_STATE NAME=tool_dropoff_state
     {% endif %}
     SET_GCODE_OFFSET X=0 Y=0 Z=0
 
-# -----------------------------------------------------------------------------
-# M6 — TOOLCHANGE  [item 2]
-#
-# Fix: every tool branch now passes TOOL_NUM to TOOL_PICKUP so DOCK_INIT.tool
-#      is always correct. M3 will route to the right output pin.
-# Fix: laser tool also enables laser_enable line on pickup.
-# -----------------------------------------------------------------------------
+# M6 -- TOOLCHANGE
+# gcode-command override -- not a button. Use the GRAB_* aliases as buttons.
 [gcode_macro M6]
-description: Tool change — T0=hotend T1=laser T2=endmill T3=drill
+description: Tool change -- T0=hotend T1=laser T2=endmill T3=drill
 gcode:
     {% if params.T is defined %}
         {% set new_tool = params.T|int %}
         {% if new_tool == 0 %}
-            TOOL_PICKUP ZONE_X=-89.8 ZONE_Y=-130 PARK_X=-89.8 PARK_Y=-188 OFFSET_X=5 OFFSET_Y=0 OFFSET_Z=-1.65 GRIP=-10 GRIPP=0 TOOL_NUM=0 CLEAR_LEFT=41 CLEAR_RIGHT=50
+            _TOOL_PICKUP ZONE_X=-89.8 ZONE_Y=-130 PARK_X=-89.8 PARK_Y=-188 OFFSET_X=5 OFFSET_Y=0 OFFSET_Z=-1.65 GRIP=-10 GRIPP=-2 TOOL_NUM=0 CLEAR_LEFT=41 CLEAR_RIGHT=50
         {% elif new_tool == 1 %}
-            TOOL_PICKUP ZONE_X=51.2 ZONE_Y=-150 PARK_X=51.2 PARK_Y=-186 OFFSET_X=7 OFFSET_Y=-7 OFFSET_Z=27 GRIP=-10 GRIPP=0 TOOL_NUM=1
+            _TOOL_PICKUP ZONE_X=51.2 ZONE_Y=-150 PARK_X=51.2 PARK_Y=-186 OFFSET_X=7 OFFSET_Y=-7 OFFSET_Z=24 GRIP=-10 GRIPP=-2 TOOL_NUM=1
             SET_PIN PIN=laser_enable VALUE=0
         {% elif new_tool == 2 %}
-            TOOL_PICKUP ZONE_X=-10.8 ZONE_Y=-150 PARK_X=-10.8 PARK_Y=-188 OFFSET_X=0 OFFSET_Y=6 OFFSET_Z=2.8 GRIP=-10 GRIPP=0 TOOL_NUM=2
+            _TOOL_PICKUP ZONE_X=-10.8 ZONE_Y=-150 PARK_X=-10.8 PARK_Y=-188 OFFSET_X=0 OFFSET_Y=6 OFFSET_Z=2.8 GRIP=-10 GRIPP=-2 TOOL_NUM=2
         {% elif new_tool == 3 %}
-            TOOL_PICKUP ZONE_X=125.2 ZONE_Y=-150 PARK_X=125.2 PARK_Y=-186.5 OFFSET_X=0 OFFSET_Y=20 OFFSET_Z=12.45 GRIP=-10 GRIPP=0 TOOL_NUM=3 CLEAR_LEFT=41 CLEAR_RIGHT=50
+            _TOOL_PICKUP ZONE_X=125.2 ZONE_Y=-150 PARK_X=125.2 PARK_Y=-186.5 OFFSET_X=0 OFFSET_Y=20 OFFSET_Z=12.45 GRIP=-10 GRIPP=-2 TOOL_NUM=3 CLEAR_LEFT=41 CLEAR_RIGHT=50
         {% endif %}
     {% else %}
-        TOOL_DROPOFF
+        _TOOL_DROPOFF
     {% endif %}
 
-# Convenience aliases
+# Convenience aliases (visible -- these are the buttons operators press)
 [gcode_macro GRAB_DRILL]
+description: Pick up the drill tool (T3)
 gcode: M6 T3
 
 [gcode_macro GRAB_ENDMILL]
+description: Pick up the end mill tool (T2)
 gcode: M6 T2
 
 [gcode_macro GRAB_LASER]
+description: Pick up the laser tool (T1)
 gcode: M6 T1
 
 [gcode_macro GRAB_HOTEND]
+description: Pick up the hotend tool (T0)
 gcode: M6 T0
 
-# -----------------------------------------------------------------------------
-# CANCEL / PAUSE / RESUME  [items 10, 11]
-#
-# Fix: PAUSE now calls M5 before any moves — laser can't stay on during pause.
-# -----------------------------------------------------------------------------
+[gcode_macro DOCK_TOOL]
+description: Drop off the currently held tool
+gcode: _TOOL_DROPOFF
+
+# M05 -> DOCK_DRILL alias removed: the original referenced a non-existent
+# DOCK_DRILL macro and duplicated M5's spindle name. Use DOCK_TOOL to dock.
+
+# CANCEL / PAUSE / RESUME
+# gcode-command overrides -- not buttons (Mainsail/Fluidd show their own).
 [gcode_macro CANCEL_PRINT]
 description: Cancel the running print
 rename_existing: CANCEL_PRINT_BASE
@@ -992,8 +920,8 @@ gcode:
     G91
     G1 Z1
     G90
-    HOME_XY
-    TOOL_DROPOFF
+    _HOME_XY
+    _TOOL_DROPOFF
     G91
     G1 Z-1
     G90
@@ -1004,7 +932,7 @@ description: Pause the running print
 rename_existing: PAUSE_BASE
 variable_extrude: 1.0
 gcode:
-    M5  # safety: kill laser/spindle before any moves  [item 10]
+    M5  # safety: kill laser/spindle before any moves
     {% set E = printer["gcode_macro PAUSE"].extrude|float %}
     {% set y_park = (printer.toolhead.axis_maximum.y - 10)|float - 5.0 %}
     {% set max_z = printer.toolhead.axis_maximum.z|float %}
@@ -1033,7 +961,7 @@ gcode:
 description: Resume the running print
 rename_existing: RESUME_BASE
 gcode:
-    HOME_XY
+    _HOME_XY
     {% set E = printer["gcode_macro PAUSE"].extrude|float %}
     {% if 'VELOCITY' in params|upper %}
         {% set get_params = ('VELOCITY=' + params.VELOCITY) %}
@@ -1048,10 +976,9 @@ gcode:
     {% endif %}
     RESUME_BASE {get_params}
 
-# -----------------------------------------------------------------------------
-# FILAMENT HELPERS
-# -----------------------------------------------------------------------------
+# FILAMENT HELPERS  (visible)
 [gcode_macro CLEAN_NOZZLE]
+description: Purge a small amount of filament
 gcode:
     SAVE_GCODE_STATE NAME=MY_STATE
     G91
@@ -1060,6 +987,7 @@ gcode:
     RESTORE_GCODE_STATE NAME=MY_STATE
 
 [gcode_macro EJECT_FILAMENT]
+description: Retract and unload filament
 gcode:
     SAVE_GCODE_STATE NAME=MY_STATE
     G91
@@ -1068,6 +996,7 @@ gcode:
     RESTORE_GCODE_STATE NAME=MY_STATE
 
 [gcode_macro INSTALL_FILAMENT]
+description: Load and advance filament
 gcode:
     SAVE_GCODE_STATE NAME=MY_STATE
     G91
@@ -1075,10 +1004,9 @@ gcode:
     G90
     RESTORE_GCODE_STATE NAME=MY_STATE
 
-# -----------------------------------------------------------------------------
-# WIRE OPERATIONS
-# -----------------------------------------------------------------------------
+# WIRE OPERATIONS  (visible)
 [gcode_macro WIRE_FEED]
+description: Feed wire (optional MM=length)
 gcode:
     SET_SERVO SERVO=my_servo ANGLE=-20
     MANUAL_STEPPER STEPPER=wire_feed SET_POSITION=0
@@ -1089,6 +1017,7 @@ gcode:
     {% endif %}
 
 [gcode_macro WIRE_STRIP]
+description: Strip wire insulation (optional MM=length)
 gcode:
     SET_SERVO SERVO=my_servo ANGLE=-10
     MANUAL_STEPPER STEPPER=wire_cutter SET_POSITION=0
@@ -1099,6 +1028,7 @@ gcode:
     {% endif %}
 
 [gcode_macro WIRE_CUT]
+description: Cut wire (optional MM=length)
 gcode:
     SET_SERVO SERVO=my_servo ANGLE=60
     MANUAL_STEPPER STEPPER=wire_cutter SET_POSITION=0
@@ -1108,28 +1038,25 @@ gcode:
         MANUAL_STEPPER STEPPER=wire_cutter MOVE=75 SPEED=20 ACCEL=1000
     {% endif %}
 
-# -----------------------------------------------------------------------------
-# DEEP LASER CUT  [item 11]
-#
-# Fix: pre-flight check aborts if (pass_count * step_mm) would exceed
-#      position_min, preventing a crash into the bed frame.
-# Fix: laser safety guard in M3 also applies per-pass.
-# New: PASSES and STEP_MM are now parameters (defaults match original).
+# DEEP LASER CUT  (visible)
+# Pre-flight check aborts if (passes * step_mm) would exceed position_min,
+# preventing a crash into the bed frame. Laser safety guard in M3 applies
+# per-pass.
 # Usage:
-#   DEEP_LASER_CUT                        — original 125-pass 0.2mm behaviour
-#   DEEP_LASER_CUT PASSES=50 STEP_MM=0.1 — 5mm deep at finer steps
-# -----------------------------------------------------------------------------
+#   DEEP_LASER_CUT                        -- 125-pass 0.2mm behaviour
+#   DEEP_LASER_CUT PASSES=50 STEP_MM=0.1  -- 5mm deep at finer steps
 [gcode_macro DEEP_LASER_CUT]
+description: Multi-pass laser cut with Z-depth safety guard
 gcode:
     {% set passes    = params.PASSES|default(125)|int %}
     {% set step_mm   = params.STEP_MM|default(0.2)|float %}
     {% set pos_min   = printer.toolhead.axis_minimum.z|float %}
     {% set total_depth = passes * step_mm %}
 
-    # Pre-flight: abort if depth exceeds Z travel  [item 11]
+    # Pre-flight: abort if depth exceeds Z travel
     {% if (-1.0 * total_depth) < pos_min %}
         { action_respond_info("DEEP_LASER_CUT ABORTED: %d passes at %.2fmm = %.2fmm depth exceeds position_min %.2fmm" % (passes, step_mm, total_depth, pos_min)) }
-        M117 ABORTED — exceeds Z limit
+        M117 ABORTED -- exceeds Z limit
     {% else %}
         # 1. Setup
         HOME_PRINTER
@@ -1165,7 +1092,7 @@ gcode:
 
         # 3. Cleanup
         G1 Z0 F600
-        HOME_XY
-        TOOL_DROPOFF
+        _HOME_XY
+        _TOOL_DROPOFF
         M117 Deep cut complete
     {% endif %}
