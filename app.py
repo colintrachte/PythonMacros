@@ -1,13 +1,15 @@
 import os
+import re
 import json
 import importlib.util
 import inspect
 import traceback
 import mimetypes
 import shutil
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -21,10 +23,12 @@ HISTORY_DIR  = os.path.join(BASE_DIR, 'history')
 SESSION_FILE = os.path.join(BASE_DIR, 'last_session.json')
 CONFIG_FILE  = os.path.join(BASE_DIR, 'config_info.json')
 DEFAULT_WS   = os.path.join(BASE_DIR, 'workspaces')
+PRESETS_DIR  = os.path.join(BASE_DIR, 'presets')
 HISTORY_META = os.path.join(HISTORY_DIR, 'meta.json')
 MAX_HISTORY  = 50
+MAX_SESSIONS = 5
 
-for path in [PLUGIN_DIR, DEFAULT_WS, HISTORY_DIR]:
+for path in [PLUGIN_DIR, DEFAULT_WS, HISTORY_DIR, PRESETS_DIR]:
     os.makedirs(path, exist_ok=True)
 
 for _ext, _mime in [
@@ -250,6 +254,41 @@ def get_config():
     return {"workspace": DEFAULT_WS}
 
 
+# ── Session management ────────────────────────────────────────────────────
+
+def list_session_dirs():
+    """Return session dirs inside the workspace sorted oldest first."""
+    ws = get_config()['workspace']
+    result = []
+    try:
+        for d in os.listdir(ws):
+            full = os.path.join(ws, d)
+            if os.path.isdir(full) and os.path.exists(os.path.join(full, 'session.json')):
+                result.append((os.path.getmtime(full), full))
+    except OSError:
+        pass
+    result.sort()
+    return [p for _, p in result]
+
+
+def prune_sessions():
+    sessions = list_session_dirs()
+    while len(sessions) >= MAX_SESSIONS:
+        shutil.rmtree(sessions.pop(0), ignore_errors=True)
+
+
+def new_session_dir(filename):
+    """Create a timestamped session subfolder and prune old ones."""
+    prune_sessions()
+    ws   = get_config()['workspace']
+    ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe = re.sub(r'[^\w.-]', '_', os.path.splitext(filename)[0])[:40]
+    name = f"{ts}_{safe}"
+    path = os.path.join(ws, name)
+    os.makedirs(path, exist_ok=True)
+    return name, path
+
+
 @app.route('/')
 def index():
     return render_template("index.html")
@@ -278,9 +317,16 @@ def upload_file():
     f = request.files['file']
     if not f.filename:
         return jsonify({"error": "Empty filename"}), 400
-    dest = os.path.join(get_config()['workspace'], os.path.basename(f.filename))
-    f.save(dest)
-    return jsonify({"status": "success", "filename": os.path.basename(f.filename)})
+    filename = os.path.basename(f.filename)
+    session_name, session_path = new_session_dir(filename)
+    f.save(os.path.join(session_path, filename))
+    with open(os.path.join(session_path, 'session.json'), 'w') as mf:
+        json.dump({"filename": filename, "session_dir": session_name}, mf)
+    return jsonify({
+        "status":      "success",
+        "filename":    filename,
+        "session_dir": session_name,
+    })
 
 
 @app.route('/list_workspaces', methods=['GET'])
@@ -306,26 +352,6 @@ def save_config():
     return jsonify({"status": "success"})
 
 
-@app.route('/save_as', methods=['POST'])
-def save_as():
-    data     = request.json
-    filename = data.get('filename', '').strip()
-    scripts  = data.get('scripts', [])
-
-    if not filename:
-        return jsonify({"error": "No filename provided"}), 400
-
-    basename = os.path.basename(filename)
-    if not basename.endswith('.json'):
-        basename += '.json'
-
-    dest = os.path.join(get_config()['workspace'], basename)
-    with open(dest, 'w') as f:
-        json.dump(scripts, f, indent=4)
-
-    return jsonify({"status": "success", "saved_to": dest, "filename": basename})
-
-
 @app.route('/load', methods=['GET'])
 def load_config():
     if os.path.exists(SESSION_FILE):
@@ -337,23 +363,39 @@ def load_config():
     return jsonify([])
 
 
-@app.route('/load_file', methods=['POST'])
-def load_file():
-    filename = request.json.get('filename', '').strip()
+@app.route('/download_output', methods=['GET'])
+def download_output():
+    session_dir = os.path.basename(request.args.get('session_dir', '').strip())
+    filename    = os.path.basename(request.args.get('filename', '').strip())
+    if not session_dir or not filename:
+        return jsonify({"error": "Missing session_dir or filename"}), 400
+    path = os.path.join(get_config()['workspace'], session_dir, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+    return send_file(path, as_attachment=True, download_name=filename)
+
+
+@app.route('/save_preset', methods=['POST'])
+def save_preset():
+    data     = request.json
+    filename = data.get('filename', '').strip()
+    scripts  = data.get('scripts', [])
     if not filename:
         return jsonify({"error": "No filename provided"}), 400
-
     basename = os.path.basename(filename)
-    path     = os.path.join(get_config()['workspace'], basename)
+    if not basename.endswith('.json'):
+        basename += '.json'
+    with open(os.path.join(PRESETS_DIR, basename), 'w') as f:
+        json.dump(scripts, f, indent=4)
+    return jsonify({"status": "success", "filename": basename})
 
-    if not os.path.exists(path):
-        return jsonify({"error": f"File not found: {basename}"}), 404
 
+@app.route('/list_presets', methods=['GET'])
+def list_presets():
     try:
-        with open(path, 'r') as f:
-            return jsonify(json.load(f))
-    except (json.JSONDecodeError, IOError) as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify(sorted(f for f in os.listdir(PRESETS_DIR) if f.endswith('.json')))
+    except Exception:
+        return jsonify([])
 
 
 # ── History routes ─────────────────────────────────────────────────────────
@@ -486,12 +528,16 @@ def execute_scripts():
     Errors in individual steps are caught; execution halts at the first failure
     and reports which steps completed successfully before the crash.
     """
-    data     = request.json
-    filename = data.get('filename')
-    scripts  = data.get('scripts', [])
+    data        = request.json
+    filename    = data.get('filename')
+    session_dir = os.path.basename(data.get('session_dir', ''))
+    scripts     = data.get('scripts', [])
 
     workspace   = get_config()['workspace']
-    target_path = os.path.join(workspace, filename)
+    target_path = (
+        os.path.join(workspace, session_dir, filename) if session_dir
+        else os.path.join(workspace, filename)
+    )
 
     if not os.path.exists(target_path):
         return jsonify({"error": f"File not found in workspace: {filename}"}), 404

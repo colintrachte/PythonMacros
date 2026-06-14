@@ -193,7 +193,7 @@ header {
 .tb-btn:disabled:hover  { background: transparent; border-color: transparent; color: var(--text-secondary); }
 .tb-btn svg             { flex-shrink: 0; }
 
-.seq-filename {
+.output-filename {
     font-family:  var(--mono);
     font-size:    13px;
     color:        var(--text-dim);
@@ -201,7 +201,7 @@ header {
     padding-left: 10px;
     border-left:  1px solid var(--border-subtle);
 }
-.seq-filename.named { color: var(--accent); }
+.output-filename.named { color: var(--success); }
 
 /* ── Save-As inline bar ──────────────────────────────────────── */
 
@@ -259,10 +259,47 @@ main { flex-grow: 1; padding: 32px 24px; }
     display:         flex;
     justify-content: space-between;
     align-items:     center;
-    margin-bottom:   16px;
+    margin-bottom:   8px;
 }
 .section-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; }
 .section-hint  { font-size: 12px; color: var(--text-dim); }
+
+/* ── Preset bar ──────────────────────────────────────────────── */
+
+.preset-bar {
+    display:     flex;
+    align-items: center;
+    gap:         2px;
+}
+
+.preset-bar-label {
+    font-size:      10px;
+    font-weight:    600;
+    color:          var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-right:  8px;
+    border-right:   1px solid var(--border-subtle);
+    margin-right:   4px;
+    white-space:    nowrap;
+}
+
+.tb-btn-xs {
+    font-size:   11px;
+    padding:     3px 7px;
+    gap:         4px;
+}
+
+.preset-filename {
+    font-family:  var(--mono);
+    font-size:    11px;
+    color:        var(--text-dim);
+    margin-left:  6px;
+    padding-left: 8px;
+    border-left:  1px solid var(--border-subtle);
+    white-space:  nowrap;
+}
+.preset-filename.named { color: var(--accent); }
 
 /* ── Step list ───────────────────────────────────────────────── */
 

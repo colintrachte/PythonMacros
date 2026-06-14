@@ -1,6 +1,5 @@
 /**
  * PY-AUTOMATE — scripts.js
- * Undo/redo, autosave, save/save-as/load, inline plugin picker with metadata.
  */
 
 const API_BASE = 'http://localhost:5000';
@@ -8,19 +7,21 @@ const API_BASE = 'http://localhost:5000';
 // ── State ──────────────────────────────────────────────────────────────────
 
 const state = {
-    selectedFile:        null,
-    selectedFileMime:    null,       // guessed MIME of the target file
-    currentSeqFilename:  null,
-    pluginCache:         [],         // array of plugin descriptor objects from /list_plugins
-    pluginDropdownOpen:  false,
-    activeTagFilter:     null,       // tag string or null for "all"
+    selectedFile:       null,
+    selectedFileMime:   null,
+    sessionDir:         null,       // workspace session subfolder name
+    outputFilename:     null,       // filename inside session dir
+    currentPresetName:  null,
+    pluginCache:        [],
+    pluginDropdownOpen: false,
+    activeTagFilter:    null,
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 
 let el = {};
 
-// ── MIME guessing (client-side, rough) ────────────────────────────────────
+// ── MIME guessing ─────────────────────────────────────────────────────────
 
 function guessMime(filename) {
     const ext = filename.split('.').pop().toLowerCase();
@@ -51,20 +52,14 @@ function log(msg, type = 'info') {
 
 // ── Step rendering ─────────────────────────────────────────────────────────
 
-/**
- * Build a step <li> from a step descriptor.
- * descriptor: { pluginKey, description, isChecked }
- * We look up rich metadata from pluginCache to show label + dep warnings.
- */
 function createStepEl({ pluginKey, description = '', isChecked = true }) {
     const li = document.createElement('li');
     li.dataset.pluginKey = pluginKey;
     if (!isChecked) li.classList.add('step-disabled');
 
-    // Look up cached metadata for this plugin
     const info    = state.pluginCache.find(p => p.key === pluginKey) || {};
     const label   = info.label || pluginKey;
-    const depsOk  = info.deps_ok !== false;   // true if not in cache yet (optimistic)
+    const depsOk  = info.deps_ok !== false;
     const missing = info.missing_deps || [];
 
     const depWarning = !depsOk
@@ -191,70 +186,121 @@ async function performRedo() {
     } catch (e) { log("Redo failed: " + e.message, 'error'); }
 }
 
-// ── Save / Save As / Load ──────────────────────────────────────────────────
+// ── Output file management ─────────────────────────────────────────────────
 
-async function saveSequence() {
-    if (!state.currentSeqFilename) { openSaveAsBar(); return; }
+function updateOutputState() {
+    const ready = !!(state.sessionDir && state.outputFilename);
+    el.saveOutputBtn.disabled   = !ready;
+    el.saveOutputAsBtn.disabled = !ready;
+    el.outputFilename.textContent = ready ? state.outputFilename : '';
+    el.outputFilename.classList.toggle('named', ready);
+}
+
+function saveOutput() {
+    if (!state.sessionDir || !state.outputFilename) return;
+    const url = `${API_BASE}/download_output`
+        + `?session_dir=${encodeURIComponent(state.sessionDir)}`
+        + `&filename=${encodeURIComponent(state.outputFilename)}`;
+    const a = document.createElement('a');
+    a.href     = url;
+    a.download = state.outputFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    log(`Downloading: ${state.outputFilename}`, 'success');
+}
+
+async function saveOutputAs() {
+    if (!state.sessionDir || !state.outputFilename) return;
+    const url = `${API_BASE}/download_output`
+        + `?session_dir=${encodeURIComponent(state.sessionDir)}`
+        + `&filename=${encodeURIComponent(state.outputFilename)}`;
+
+    if ('showSaveFilePicker' in window) {
+        try {
+            const ext = state.outputFilename.split('.').pop();
+            const fh  = await window.showSaveFilePicker({
+                suggestedName: state.outputFilename,
+                types: [{ description: 'Output file', accept: { '*/*': [`.${ext}`] } }],
+            });
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            const ws   = await fh.createWritable();
+            await ws.write(blob);
+            await ws.close();
+            log(`Saved: ${fh.name}`, 'success');
+        } catch (e) {
+            if (e.name !== 'AbortError') log('Save As failed: ' + e.message, 'error');
+        }
+    } else {
+        saveOutput();
+    }
+}
+
+// ── Preset management ──────────────────────────────────────────────────────
+
+function updatePresetFilenameDisplay() {
+    if (state.currentPresetName) {
+        el.presetFilename.textContent = state.currentPresetName;
+        el.presetFilename.classList.add('named');
+    } else {
+        el.presetFilename.textContent = 'unsaved';
+        el.presetFilename.classList.remove('named');
+    }
+}
+
+async function savePreset() {
+    if (!state.currentPresetName) { openPresetSaveAsBar(); return; }
     try {
-        await fetch(`${API_BASE}/save_as`, {
+        const r = await fetch(`${API_BASE}/save_preset`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ filename: state.currentSeqFilename, scripts: getSequence() }),
+            body:    JSON.stringify({ filename: state.currentPresetName, scripts: getSequence() }),
         });
-        log(`Saved → ${state.currentSeqFilename}`, 'success');
-    } catch (e) { log("Save failed: " + e.message, 'error'); }
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        log(`Preset saved → ${state.currentPresetName}`, 'success');
+    } catch (e) { log("Save preset failed: " + e.message, 'error'); }
 }
 
-function openSaveAsBar() {
-    el.saveAsBar.classList.add('open');
-    el.saveAsInput.value = state.currentSeqFilename || '';
-    el.saveAsInput.focus();
-    el.saveAsInput.select();
+function openPresetSaveAsBar() {
+    el.presetSaveAsBar.classList.add('open');
+    el.presetSaveAsInput.value = state.currentPresetName || '';
+    el.presetSaveAsInput.focus();
+    el.presetSaveAsInput.select();
 }
 
-function closeSaveAsBar() {
-    el.saveAsBar.classList.remove('open');
+function closePresetSaveAsBar() {
+    el.presetSaveAsBar.classList.remove('open');
 }
 
-async function confirmSaveAs() {
-    let name = el.saveAsInput.value.trim();
+async function confirmPresetSaveAs() {
+    let name = el.presetSaveAsInput.value.trim();
     if (!name) return;
     if (!name.endsWith('.json')) name += '.json';
     try {
-        const r    = await fetch(`${API_BASE}/save_as`, {
+        const r = await fetch(`${API_BASE}/save_preset`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ filename: name, scripts: getSequence() }),
         });
-        const data = await r.json();
-        if (data.error) throw new Error(data.error);
-        state.currentSeqFilename = data.filename;
-        updateSeqFilenameDisplay();
-        log(`Saved as → ${data.filename}`, 'success');
-        closeSaveAsBar();
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        state.currentPresetName = d.filename;
+        updatePresetFilenameDisplay();
+        log(`Preset saved as → ${d.filename}`, 'success');
+        closePresetSaveAsBar();
     } catch (e) { log("Save As failed: " + e.message, 'error'); }
 }
 
-function updateSeqFilenameDisplay() {
-    if (state.currentSeqFilename) {
-        el.seqFilename.textContent = state.currentSeqFilename;
-        el.seqFilename.classList.add('named');
-    } else {
-        el.seqFilename.textContent = 'unsaved';
-        el.seqFilename.classList.remove('named');
-    }
-}
-
-function openLoadPicker() { el.seqFilePicker.click(); }
-
-async function loadFromPicker(file) {
+async function loadPresetFromPicker(file) {
     try {
         const steps = JSON.parse(await file.text());
         renderSequence(steps);
-        state.currentSeqFilename = file.name;
-        updateSeqFilenameDisplay();
+        state.currentPresetName = file.name;
+        updatePresetFilenameDisplay();
         await pushHistoryAndSave();
-        log(`Loaded: ${file.name}`, 'success');
+        log(`Preset loaded: ${file.name}`, 'success');
     } catch (e) { log("Load failed: " + e.message, 'error'); }
 }
 
@@ -263,7 +309,6 @@ async function loadFromPicker(file) {
 async function openPluginDropdown() {
     if (state.pluginDropdownOpen) { closePluginDropdown(); return; }
 
-    // Always refresh the cache when opening so dep status stays current
     try {
         const r = await fetch(`${API_BASE}/list_plugins`);
         state.pluginCache = await r.json();
@@ -287,15 +332,11 @@ function closePluginDropdown() {
     state.pluginDropdownOpen = false;
 }
 
-/** Collect all unique tags from the cache and render filter chips. */
 function renderTagBar() {
     const allTags = [...new Set(state.pluginCache.flatMap(p => p.tags || []))].sort();
     el.tagBar.innerHTML = '';
 
-    if (allTags.length === 0) {
-        el.tagBar.style.display = 'none';
-        return;
-    }
+    if (allTags.length === 0) { el.tagBar.style.display = 'none'; return; }
     el.tagBar.style.display = 'flex';
 
     const makeChip = (label, value) => {
@@ -331,11 +372,6 @@ function applyPluginFilter() {
     renderPluginList(filtered);
 }
 
-/**
- * Render plugin list items.
- * Each item shows: label (bold), key (mono sub-line), description, dep warning if needed.
- * Items incompatible with the selected file MIME are visually dimmed but still addable.
- */
 function renderPluginList(plugins) {
     el.pluginList.innerHTML = '';
 
@@ -392,6 +428,9 @@ function renderPluginList(plugins) {
 async function handleFileSelected(file) {
     state.selectedFile     = file;
     state.selectedFileMime = guessMime(file.name);
+    state.sessionDir       = null;
+    state.outputFilename   = null;
+    updateOutputState();
     el.fileDisplay.textContent = file.name;
     el.fileDisplay.classList.add('active');
     log(`Target: ${file.name}  [${state.selectedFileMime}]`);
@@ -401,8 +440,14 @@ async function handleFileSelected(file) {
     try {
         const r    = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
         const data = await r.json();
-        if (data.error) log(`Upload failed: ${data.error}`, 'error');
-        else log(`Copied to workspace: ${data.filename}`, 'success');
+        if (data.error) {
+            log(`Upload failed: ${data.error}`, 'error');
+        } else {
+            state.sessionDir     = data.session_dir;
+            state.outputFilename = data.filename;
+            updateOutputState();
+            log(`Workspace ready: ${data.filename}`, 'success');
+        }
     } catch (e) { log(`Upload failed: ${e.message}`, 'error'); }
 }
 
@@ -447,18 +492,18 @@ async function changeWorkspace() {
 
 async function runSequence() {
     if (!state.selectedFile) { log("No target file selected.", 'error'); return; }
+    if (!state.sessionDir)   { log("File not yet uploaded to workspace.", 'error'); return; }
 
     const activeSteps = getSequence().filter(s => s.isChecked);
     if (activeSteps.length === 0) { log("No active steps to run.", 'warn'); return; }
 
-    // Client-side dep pre-check so we warn before even hitting the server
     const depErrors = activeSteps
         .map(s => state.pluginCache.find(p => p.key === s.pluginKey))
         .filter(p => p && p.deps_ok === false);
 
     if (depErrors.length > 0) {
         depErrors.forEach(p =>
-            log(`⚠ '${p.label}' is missing: ${p.missing_deps.join(', ')}`, 'warn')
+            log(`'${p.label}' is missing: ${p.missing_deps.join(', ')}`, 'warn')
         );
         log("Fix missing dependencies before running.", 'error');
         return;
@@ -470,7 +515,11 @@ async function runSequence() {
         const r      = await fetch(`${API_BASE}/execute`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ filename: state.selectedFile.name, scripts: activeSteps }),
+            body:    JSON.stringify({
+                filename:    state.selectedFile.name,
+                session_dir: state.sessionDir,
+                scripts:     activeSteps,
+            }),
         });
         const result = await r.json();
 
@@ -479,11 +528,11 @@ async function runSequence() {
             if (result.completed && result.completed.length > 0)
                 log(`Completed before failure: ${result.completed.join(', ')}`, 'warn');
         } else {
-            // Log any per-step warnings (e.g. MIME mismatches at runtime)
             (result.steps || []).forEach(s => {
-                if (s.warning) log(`  ⚠ ${s.step}: ${s.warning}`, 'warn');
+                if (s.warning) log(`  ${s.step}: ${s.warning}`, 'warn');
             });
-            log(`Done — ${result.message}  [output: ${result.mime_type}]`, 'success');
+            log(`Done — ${result.message}  [${result.mime_type}]`, 'success');
+            log(`Use "Save Output" in the toolbar to download the result.`, 'system');
         }
     } catch (e) { log("Execution failed: " + e.message, 'error'); }
 }
@@ -493,44 +542,48 @@ async function runSequence() {
 document.addEventListener('DOMContentLoaded', async () => {
 
     el = {
-        scriptList:       document.getElementById('scriptList'),
-        emptyState:       document.getElementById('emptyState'),
-        workspaceDisplay: document.getElementById('workspaceDisplay'),
-        fileDisplay:      document.getElementById('fileDisplay'),
-        consoleContent:   document.getElementById('consoleContent'),
-        consoleToolbar:   document.getElementById('consoleToolbar'),
-        resizeHandle:     document.getElementById('resizeHandle'),
-        filePicker:       document.getElementById('filePicker'),
-        seqFilePicker:    document.getElementById('seqFilePicker'),
-        // toolbar
-        undoBtn:          document.getElementById('undoBtn'),
-        redoBtn:          document.getElementById('redoBtn'),
-        saveBtn:          document.getElementById('saveBtn'),
-        saveAsBtn:        document.getElementById('saveAsBtn'),
-        loadSeqBtn:       document.getElementById('loadSeqBtn'),
-        seqFilename:      document.getElementById('seqFilename'),
-        saveAsBar:        document.getElementById('saveAsBar'),
-        saveAsInput:      document.getElementById('saveAsInput'),
+        scriptList:        document.getElementById('scriptList'),
+        emptyState:        document.getElementById('emptyState'),
+        workspaceDisplay:  document.getElementById('workspaceDisplay'),
+        fileDisplay:       document.getElementById('fileDisplay'),
+        consoleContent:    document.getElementById('consoleContent'),
+        consoleToolbar:    document.getElementById('consoleToolbar'),
+        resizeHandle:      document.getElementById('resizeHandle'),
+        filePicker:        document.getElementById('filePicker'),
+        // toolbar — output
+        undoBtn:           document.getElementById('undoBtn'),
+        redoBtn:           document.getElementById('redoBtn'),
+        saveOutputBtn:     document.getElementById('saveOutputBtn'),
+        saveOutputAsBtn:   document.getElementById('saveOutputAsBtn'),
+        outputFilename:    document.getElementById('outputFilename'),
+        // preset bar
+        savePresetBtn:     document.getElementById('savePresetBtn'),
+        savePresetAsBtn:   document.getElementById('savePresetAsBtn'),
+        loadPresetBtn:     document.getElementById('loadPresetBtn'),
+        presetFilePicker:  document.getElementById('presetFilePicker'),
+        presetSaveAsBar:   document.getElementById('presetSaveAsBar'),
+        presetSaveAsInput: document.getElementById('presetSaveAsInput'),
+        presetFilename:    document.getElementById('presetFilename'),
         // plugin dropdown
-        addStepBtn:       document.getElementById('add-global-step'),
-        pluginDropdown:   document.getElementById('pluginDropdown'),
-        pluginSearch:     document.getElementById('pluginSearch'),
-        pluginList:       document.getElementById('pluginList'),
-        tagBar:           document.getElementById('tagBar'),
+        addStepBtn:        document.getElementById('add-global-step'),
+        pluginDropdown:    document.getElementById('pluginDropdown'),
+        pluginSearch:      document.getElementById('pluginSearch'),
+        pluginList:        document.getElementById('pluginList'),
+        tagBar:            document.getElementById('tagBar'),
         // run / workspace / console
-        playAll:          document.getElementById('playAll'),
-        workspaceBtn:     document.getElementById('workspaceBtn'),
-        consoleClear:     document.getElementById('consoleClear'),
+        playAll:           document.getElementById('playAll'),
+        workspaceBtn:      document.getElementById('workspaceBtn'),
+        consoleClear:      document.getElementById('consoleClear'),
     };
 
     // Sortable
     if (typeof Sortable !== 'undefined') {
         Sortable.create(el.scriptList, {
-            animation:   150,
-            handle:      '.step-drag-handle',
-            ghostClass:  'sortable-ghost',
-            dragClass:   'sortable-drag',
-            onEnd:       pushHistoryAndSave,
+            animation:  150,
+            handle:     '.step-drag-handle',
+            ghostClass: 'sortable-ghost',
+            dragClass:  'sortable-drag',
+            onEnd:      pushHistoryAndSave,
         });
     }
 
@@ -550,26 +603,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         log('Console cleared.', 'system');
     });
 
-    // File pickers
-    el.filePicker.addEventListener('change',    e => { if (e.target.files[0]) handleFileSelected(e.target.files[0]); e.target.value = ''; });
-    el.seqFilePicker.addEventListener('change', e => {
-        if (e.target.files[0]) loadFromPicker(e.target.files[0]);
+    // File picker
+    el.filePicker.addEventListener('change', e => {
+        if (e.target.files[0]) handleFileSelected(e.target.files[0]);
         e.target.value = '';
     });
 
-    // Toolbar
-    el.undoBtn.addEventListener('click',   performUndo);
-    el.redoBtn.addEventListener('click',   performRedo);
-    el.saveBtn.addEventListener('click',   saveSequence);
-    el.saveAsBtn.addEventListener('click', openSaveAsBar);
-    el.loadSeqBtn.addEventListener('click',openLoadPicker);
+    // Output buttons
+    el.saveOutputBtn.addEventListener('click',   saveOutput);
+    el.saveOutputAsBtn.addEventListener('click', saveOutputAs);
 
-    document.getElementById('saveAsConfirm').addEventListener('click', confirmSaveAs);
-    document.getElementById('saveAsCancel').addEventListener('click',  closeSaveAsBar);
-    el.saveAsInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter')  confirmSaveAs();
-        if (e.key === 'Escape') closeSaveAsBar();
+    // Preset buttons
+    el.savePresetBtn.addEventListener('click',   savePreset);
+    el.savePresetAsBtn.addEventListener('click', openPresetSaveAsBar);
+    el.loadPresetBtn.addEventListener('click',   () => el.presetFilePicker.click());
+    el.presetFilePicker.addEventListener('change', e => {
+        if (e.target.files[0]) loadPresetFromPicker(e.target.files[0]);
+        e.target.value = '';
     });
+    document.getElementById('presetSaveAsConfirm').addEventListener('click', confirmPresetSaveAs);
+    document.getElementById('presetSaveAsCancel').addEventListener('click',  closePresetSaveAsBar);
+    el.presetSaveAsInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter')  confirmPresetSaveAs();
+        if (e.key === 'Escape') closePresetSaveAsBar();
+    });
+
+    // Undo / redo
+    el.undoBtn.addEventListener('click', performUndo);
+    el.redoBtn.addEventListener('click', performRedo);
 
     // Plugin dropdown
     el.addStepBtn.addEventListener('click', e => { e.stopPropagation(); openPluginDropdown(); });
@@ -591,15 +652,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ctrl = e.ctrlKey || e.metaKey;
         if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); }
         if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); performRedo(); }
-        if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); saveSequence(); }
-        if (ctrl && e.key === 's' &&  e.shiftKey) { e.preventDefault(); openSaveAsBar(); }
+        if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); saveOutput(); }
+        if (ctrl && e.key === 's' &&  e.shiftKey) { e.preventDefault(); saveOutputAs(); }
+        if (ctrl && e.key === 'p') { e.preventDefault(); savePreset(); }
     });
 
     // Boot
     try {
         const r     = await fetch(`${API_BASE}/load`);
         const steps = await r.json();
-        // Prefetch plugin cache so createStepEl can render labels on restore
         try {
             const pr = await fetch(`${API_BASE}/list_plugins`);
             state.pluginCache = await pr.json();
@@ -615,6 +676,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (_) { el.workspaceDisplay.textContent = 'default'; }
 
     await refreshUndoRedoButtons();
-    updateSeqFilenameDisplay();
+    updateOutputState();
+    updatePresetFilenameDisplay();
     log('System ready.', 'system');
 });
