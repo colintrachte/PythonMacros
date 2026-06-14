@@ -299,12 +299,38 @@
     </div>
 
 
+    <!-- ── Rename Modal ────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="renameModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <span class="modal-title" id="renameModalTitle">Long filename detected</span>
+                <button class="modal-close" id="renameModalClose" title="Keep original">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body rename-modal-body" id="renameModalBody"></div>
+        </div>
+    </div>
+
     <!-- ── Console ─────────────────────────────────────────────────── -->
     <div class="console-toolbar" id="consoleToolbar">
         <div class="resize-handle" id="resizeHandle"></div>
         <div class="console-header">
             <span class="console-title">Output</span>
-            <button class="console-clear" id="consoleClear">Clear</button>
+            <div class="console-controls">
+                <button class="console-btn console-toggle-btn" id="consoleDebugToggle"
+                        title="Stream Flask server logs into this console">server logs</button>
+                <button class="console-btn" id="consoleCopy" title="Copy output to clipboard">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    Copy
+                </button>
+                <button class="console-btn" id="consoleClear">Clear</button>
+            </div>
         </div>
         <div class="console-content" id="consoleContent"></div>
     </div>

@@ -2,7 +2,11 @@ import io
 import os
 import re
 import json
+import queue
+import logging
 import zipfile
+import collections
+import threading
 import importlib.util
 import inspect
 import traceback
@@ -17,12 +21,42 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# ── Browser log streaming ──────────────────────────────────────────────────
+
+_log_buffer = collections.deque(maxlen=500)
+_log_subscribers: list = []
+_log_lock = threading.Lock()
+
+
+class _BrowserLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            if '/logs' in msg:          # suppress SSE endpoint's own traffic
+                return
+            _log_buffer.append(msg)
+            with _log_lock:
+                for q in list(_log_subscribers):
+                    try:
+                        q.put_nowait(msg)
+                    except queue.Full:
+                        pass
+        except Exception:
+            pass
+
+
+_browser_handler = _BrowserLogHandler()
+_browser_handler.setFormatter(logging.Formatter('%(levelname)s  %(message)s'))
+_browser_handler.setLevel(logging.DEBUG)
+logging.getLogger('werkzeug').addHandler(_browser_handler)
+app.logger.addHandler(_browser_handler)
+
 # ── Paths ──────────────────────────────────────────────────────────────────
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR   = os.path.join(BASE_DIR, 'plugins')
 HISTORY_DIR  = os.path.join(BASE_DIR, 'history')
-SESSION_FILE = os.path.join(BASE_DIR, 'last_session.json')
+SESSION_FILE = os.path.join(BASE_DIR, 'presets', 'last_session.json')
 CONFIG_FILE  = os.path.join(BASE_DIR, 'config_info.json')
 DEFAULT_WS   = os.path.join(BASE_DIR, 'workspaces')
 PRESETS_DIR       = os.path.join(BASE_DIR, 'presets')
@@ -391,6 +425,37 @@ def readme():
             return f.read(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
     except FileNotFoundError:
         return '# README not found', 404, {'Content-Type': 'text/plain; charset=utf-8'}
+
+
+@app.route('/logs')
+def log_stream():
+    def generate():
+        q = queue.Queue(maxsize=200)
+        with _log_lock:
+            _log_subscribers.append(q)
+        try:
+            for line in list(_log_buffer):
+                yield f"data: {json.dumps(line)}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            with _log_lock:
+                if q in _log_subscribers:
+                    _log_subscribers.remove(q)
+
+    return app.response_class(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
 
 
 @app.route('/get_workspace', methods=['GET'])

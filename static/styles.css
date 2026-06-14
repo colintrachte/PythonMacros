@@ -246,6 +246,34 @@ header {
 .settings-status.ok  { color: var(--success); }
 .settings-status.warn{ color: var(--warning); }
 
+/* ── Settings toggle switch ───────────────────────────────────── */
+
+.settings-toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; margin-left: auto; flex-shrink: 0; }
+.settings-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.settings-toggle-track {
+    display:       inline-block;
+    width:         34px;
+    height:        18px;
+    border-radius: 9px;
+    background:    var(--surface-3);
+    border:        1px solid var(--border);
+    position:      relative;
+    transition:    background var(--transition), border-color var(--transition);
+}
+.settings-toggle-track::after {
+    content:       '';
+    position:      absolute;
+    top:           2px;
+    left:          2px;
+    width:         12px;
+    height:        12px;
+    border-radius: 50%;
+    background:    var(--text-dim);
+    transition:    transform var(--transition), background var(--transition);
+}
+.settings-toggle input:checked + .settings-toggle-track { background: var(--accent-dim); border-color: var(--accent); }
+.settings-toggle input:checked + .settings-toggle-track::after { transform: translateX(16px); background: var(--accent); }
+
 .header-right { display: flex; align-items: center; gap: 4px; }
 
 .file-badge-area {
@@ -702,6 +730,23 @@ main { flex-grow: 1; padding: 32px 24px; }
 }
 .step-edit-btn:hover { background: var(--accent-dim); border-color: rgba(77,148,255,0.3); color: var(--accent); }
 
+.step-dup-btn {
+    display:      flex;
+    align-items:  center;
+    justify-content: center;
+    width:        28px;
+    height:       28px;
+    border-radius:5px;
+    border:       1px solid transparent;
+    background:   transparent;
+    color:        var(--text-dim);
+    cursor:       pointer;
+    transition:   all var(--transition);
+    flex-shrink:  0;
+    margin-top:   1px;
+}
+.step-dup-btn:hover { background: var(--surface-3); border-color: var(--border-subtle); color: var(--text-secondary); }
+
 .step-delete {
     display:      flex;
     align-items:  center;
@@ -998,18 +1043,32 @@ main { flex-grow: 1; padding: 32px 24px; }
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
-.console-clear {
+.console-controls {
+    display:     flex;
+    align-items: center;
+    gap:         4px;
+}
+.console-btn {
+    display:      inline-flex;
+    align-items:  center;
+    gap:          4px;
     font-size:    11px;
-    color:        var(--text-secondary);
+    color:        var(--text-dim);
     background:   none;
-    border:       none;
+    border:       1px solid transparent;
     cursor:       pointer;
     font-family:  var(--sans);
-    transition:   color var(--transition);
-    padding:      2px 6px;
+    transition:   all var(--transition);
+    padding:      2px 7px;
     border-radius:4px;
 }
-.console-clear:hover { color: var(--text-primary); background: var(--surface-2); }
+.console-btn:hover { color: var(--text-primary); background: var(--surface-2); border-color: var(--border-subtle); }
+.console-toggle-btn { color: var(--text-dim); }
+.console-toggle-btn.active {
+    color:        var(--accent);
+    background:   var(--accent-dim);
+    border-color: rgba(77,148,255,0.35);
+}
 
 .console-content {
     flex:      1;
@@ -1282,6 +1341,117 @@ main { flex-grow: 1; padding: 32px 24px; }
     font-family: var(--sans);
     font-size:   13px;
 }
+
+.modal-sm { width: min(500px, 92vw); max-height: 80vh; }
+
+/* ── Rename modal ─────────────────────────────────────────────── */
+
+.rename-modal-body { padding: 18px 20px 20px; overflow: visible; }
+
+.rename-original {
+    font-family:   var(--mono);
+    font-size:     12px;
+    color:         var(--text-secondary);
+    word-break:    break-all;
+    background:    var(--surface-2);
+    border:        1px solid var(--border-subtle);
+    border-radius: 5px;
+    padding:       6px 10px;
+    margin:        0 0 10px;
+}
+.rename-original code { color: var(--text-primary); }
+
+.rename-hint {
+    font-family: var(--sans);
+    font-size:   12px;
+    color:       var(--text-dim);
+    margin:      0 0 14px;
+    line-height: 1.5;
+}
+
+.rename-row {
+    display:     flex;
+    align-items: center;
+    gap:         6px;
+    margin:      0 0 18px;
+}
+.rename-stem-input {
+    flex:         1;
+    background:   var(--surface-2);
+    border:       1px solid var(--border);
+    border-radius:6px;
+    padding:      7px 10px;
+    font-family:  var(--mono);
+    font-size:    13px;
+    color:        var(--text-primary);
+    outline:      none;
+    transition:   border-color var(--transition);
+}
+.rename-stem-input:focus { border-color: var(--accent); }
+.rename-ext-label {
+    font-family:  var(--mono);
+    font-size:    13px;
+    color:        var(--text-dim);
+    white-space:  nowrap;
+    flex-shrink:  0;
+}
+
+.rename-batch-list {
+    list-style: none;
+    padding:    0;
+    margin:     0 0 18px;
+    display:    flex;
+    flex-direction: column;
+    gap:        6px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.rename-batch-row {
+    display:     flex;
+    align-items: baseline;
+    gap:         6px;
+    font-family: var(--mono);
+    font-size:   11px;
+    padding:     4px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.rename-batch-row:last-child { border-bottom: none; }
+.rename-batch-orig { color: var(--text-dim);       word-break: break-all; flex: 1; }
+.rename-arrow      { color: var(--accent);          flex-shrink: 0; }
+.rename-batch-new  { color: var(--text-secondary);  word-break: break-all; flex: 1; }
+
+.rename-actions {
+    display: flex;
+    gap:     10px;
+}
+.rename-btn-primary {
+    flex:         1;
+    padding:      8px 0;
+    background:   var(--accent);
+    color:        #fff;
+    border:       none;
+    border-radius:6px;
+    font-family:  var(--sans);
+    font-size:    13px;
+    font-weight:  600;
+    cursor:       pointer;
+    transition:   background var(--transition);
+}
+.rename-btn-primary:hover { background: #2563eb; }
+.rename-btn-ghost {
+    flex:         1;
+    padding:      8px 0;
+    background:   transparent;
+    color:        var(--text-secondary);
+    border:       1px solid var(--border);
+    border-radius:6px;
+    font-family:  var(--sans);
+    font-size:    13px;
+    font-weight:  500;
+    cursor:       pointer;
+    transition:   all var(--transition);
+}
+.rename-btn-ghost:hover { background: var(--surface-2); color: var(--text-primary); border-color: var(--border); }
 
 /* ── Preset cards ────────────────────────────────────────────── */
 

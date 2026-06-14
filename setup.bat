@@ -162,17 +162,34 @@ if %PLUGINS_MOVED% == 0 (
 
 echo.
 
-:: ── Write a launcher script ────────────────────────────────────────────────
+:: ── Write launcher scripts ──────────────────────────────────────────────────
 
 set LAUNCHER=%~dp0run.bat
 if not exist "%LAUNCHER%" (
-    echo @echo off > "%LAUNCHER%"
-    echo call "%VENV_DIR%\Scripts\activate.bat" >> "%LAUNCHER%"
-    echo start "" http://localhost:5000 >> "%LAUNCHER%"
-    echo python "%~dp0app.py" >> "%LAUNCHER%"
-    echo  [+] Created run.bat  -- use this to start the app.
+    (
+        echo @echo off
+        echo call "%%~dp0.venv\Scripts\activate.bat"
+        echo start "" http://localhost:5000
+        echo python "%%~dp0app.py"
+    ) > "%LAUNCHER%"
+    echo  [+] Created run.bat  -- CMD-window launcher.
 ) else (
     echo  [OK] run.bat already exists.
+)
+
+set VBS_LAUNCHER=%~dp0launch.vbs
+if not exist "%VBS_LAUNCHER%" (
+    (
+        echo Dim sh, base
+        echo Set sh = CreateObject("WScript.Shell"^)
+        echo base = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\"^)^)
+        echo sh.Run """" ^& base ^& ".venv\Scripts\pythonw.exe"" """ ^& base ^& "app.py""", 0, False
+        echo WScript.Sleep 2000
+        echo sh.Run "http://localhost:5000"
+    ) > "%VBS_LAUNCHER%"
+    echo  [+] Created launch.vbs  -- no-window launcher (recommended^).
+) else (
+    echo  [OK] launch.vbs already exists.
 )
 
 echo.
@@ -185,7 +202,8 @@ echo  ==========================================
 echo.
 echo  To start PY-AUTOMATE:
 echo.
-echo    run.bat
+echo    launch.vbs    (double-click -- no CMD window, opens browser automatically)
+echo    run.bat       (CMD window stays open -- useful if you need to see output)
 echo.
 echo  Or manually:
 echo.
@@ -193,6 +211,9 @@ echo    .venv\Scripts\activate
 echo    python app.py
 echo.
 echo  The app will be available at http://localhost:5000
+echo.
+echo  Tip: enable "Server logs in console" in the Settings panel to see
+echo       Flask output inside the app's own output console.
 echo.
 
 pause

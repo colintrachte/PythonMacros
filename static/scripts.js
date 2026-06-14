@@ -62,6 +62,44 @@ function log(msg, type = 'info') {
     el.consoleContent.scrollTop = el.consoleContent.scrollHeight;
 }
 
+// ── Server debug log stream ────────────────────────────────────────────────
+
+let _logSource = null;
+
+function updateDebugToggle() {
+    const btn = el.consoleDebugToggle;
+    if (!btn) return;
+    btn.classList.toggle('active', !!_logSource);
+    btn.title = _logSource ? 'Disconnect server logs' : 'Stream Flask server logs into this console';
+}
+
+function startServerDebug() {
+    if (_logSource) return;
+    _logSource = new EventSource(`${API_BASE}/logs`);
+    _logSource.onmessage = e => {
+        try { log('[server] ' + JSON.parse(e.data), 'system'); } catch (_) {}
+    };
+    localStorage.setItem('serverDebug', '1');
+    log('Server debug stream connected.', 'system');
+    updateDebugToggle();
+}
+
+function stopServerDebug() {
+    if (_logSource) { _logSource.close(); _logSource = null; }
+    localStorage.removeItem('serverDebug');
+    log('Server debug stream disconnected.', 'system');
+    updateDebugToggle();
+}
+
+function copyConsoleToClipboard() {
+    const text = Array.from(el.consoleContent.querySelectorAll('.console-line'))
+        .map(l => l.textContent).join('\n');
+    navigator.clipboard.writeText(text).then(
+        () => log('Console copied to clipboard.', 'system'),
+        () => log('Clipboard write failed — check browser permissions.', 'warn'),
+    );
+}
+
 // ── Step list ──────────────────────────────────────────────────────────────
 
 function createStepEl({ pluginKey, description = '', isChecked = true, args = {} }) {
@@ -132,6 +170,12 @@ function createStepEl({ pluginKey, description = '', isChecked = true, args = {}
                       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
             </svg>
         </a>
+        <button class="step-dup-btn" title="Duplicate step">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+        </button>
         <button class="step-delete" title="Remove step">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -146,6 +190,24 @@ function createStepEl({ pluginKey, description = '', isChecked = true, args = {}
     li.querySelector('.step-note').addEventListener('change', pushHistoryAndSave);
     li.querySelectorAll('.step-arg-input').forEach(input => {
         input.addEventListener('change', pushHistoryAndSave);
+    });
+    li.querySelector('.step-dup-btn').addEventListener('click', () => {
+        const dupArgs = {};
+        li.querySelectorAll('.step-arg-input').forEach(input => {
+            const t = input.dataset.argType;
+            dupArgs[input.dataset.arg] = t === 'bool' ? input.checked
+                                       : t === 'int'  ? parseInt(input.value, 10)
+                                       :                parseFloat(input.value);
+        });
+        const copy = createStepEl({
+            pluginKey:   li.dataset.pluginKey,
+            description: li.querySelector('.step-note').value,
+            isChecked:   li.querySelector('.step-checkbox').checked,
+            args:        dupArgs,
+        });
+        li.insertAdjacentElement('afterend', copy);
+        updateEmptyState();
+        pushHistoryAndSave();
     });
     li.querySelector('.step-delete').addEventListener('click', () => {
         li.remove(); updateEmptyState(); pushHistoryAndSave();
@@ -768,7 +830,8 @@ async function openSettings() {
         <div class="settings-row">
             <code class="settings-val">${d.plugin_dir}</code>
             <span class="settings-meta">${d.plugin_count} plugin${d.plugin_count !== 1 ? 's' : ''}</span>
-        </div>`;
+        </div>
+        `;
 
     function flashBtn(btn, ok) {
         btn.textContent = ok ? '✓' : '✗';
@@ -830,15 +893,120 @@ function openPluginEditor(file) {
     window.open(url, '_blank');
 }
 
+// ── Filename rename modal ──────────────────────────────────────────────────
+
+function splitFilename(name) {
+    const dot  = name.lastIndexOf('.');
+    return dot > 0
+        ? { stem: name.slice(0, dot), ext: name.slice(dot) }
+        : { stem: name, ext: '' };
+}
+
+function truncateFilename(name) {
+    const { stem, ext } = splitFilename(name);
+    return stem.slice(0, FILENAME_TRUNC_LEN) + ext;
+}
+
+function renameFile(file, newName) {
+    return new File([file], newName, { type: file.type, lastModified: file.lastModified });
+}
+
+function showRenameDialog(file) {
+    return new Promise(resolve => {
+        const { stem, ext } = splitFilename(file.name);
+        const suggested     = stem.slice(0, FILENAME_TRUNC_LEN);
+
+        document.getElementById('renameModalTitle').textContent = 'Long filename detected';
+        document.getElementById('renameModalBody').innerHTML = `
+            <p class="rename-original"><code>${file.name}</code></p>
+            <p class="rename-hint">This filename is ${file.name.length} characters — long names can hit OS path limits.
+               Edit the stem below or keep the original.</p>
+            <div class="rename-row">
+                <input class="rename-stem-input" id="renameStemInput"
+                       value="${suggested.replace(/"/g,'&quot;')}" spellcheck="false">
+                <span class="rename-ext-label">${ext}</span>
+            </div>
+            <div class="rename-actions">
+                <button class="rename-btn-primary" id="renameConfirm">Use this name</button>
+                <button class="rename-btn-ghost"   id="renameKeep">Keep original</button>
+            </div>`;
+
+        el.renameModal.classList.add('open');
+        const input = document.getElementById('renameStemInput');
+        input.focus(); input.select();
+
+        const finish = newFile => { el.renameModal.classList.remove('open'); resolve(newFile); };
+
+        document.getElementById('renameConfirm').onclick = () => {
+            const newStem = input.value.trim() || suggested;
+            finish(renameFile(file, newStem + ext));
+        };
+        document.getElementById('renameKeep').onclick    = () => finish(file);
+        el.renameModalClose.onclick                      = () => finish(file);
+
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('renameConfirm').click(); }
+            if (e.key === 'Escape') { e.preventDefault(); finish(file); }
+        }, { once: true });
+    });
+}
+
+function showBatchRenameDialog(longFiles) {
+    return new Promise(resolve => {
+        const rows = longFiles.map(f => {
+            const shortened = truncateFilename(f.name);
+            return `<li class="rename-batch-row">
+                <span class="rename-batch-orig">${f.name}</span>
+                <span class="rename-arrow">→</span>
+                <span class="rename-batch-new">${shortened}</span>
+            </li>`;
+        }).join('');
+
+        document.getElementById('renameModalTitle').textContent = `${longFiles.length} long filename${longFiles.length !== 1 ? 's' : ''}`;
+        document.getElementById('renameModalBody').innerHTML = `
+            <p class="rename-hint">These filenames exceed ${FILENAME_WARN_LEN} characters and will be auto-shortened to
+               ${FILENAME_TRUNC_LEN}-char stems. You can keep originals if you prefer.</p>
+            <ul class="rename-batch-list">${rows}</ul>
+            <div class="rename-actions">
+                <button class="rename-btn-primary" id="renameConfirm">Auto-rename all</button>
+                <button class="rename-btn-ghost"   id="renameKeep">Keep originals</button>
+            </div>`;
+
+        el.renameModal.classList.add('open');
+
+        const finish = doRename => { el.renameModal.classList.remove('open'); resolve(doRename); };
+        document.getElementById('renameConfirm').onclick = () => finish(true);
+        document.getElementById('renameKeep').onclick    = () => finish(false);
+        el.renameModalClose.onclick                      = () => finish(false);
+    });
+}
+
+async function checkLongFilenames(files) {
+    const longFiles = files.filter(f => f.name.length > FILENAME_WARN_LEN);
+    if (!longFiles.length) return files;
+
+    if (files.length === 1) {
+        return [await showRenameDialog(files[0])];
+    }
+
+    const doRename = await showBatchRenameDialog(longFiles);
+    if (!doRename) return files;
+    return files.map(f => f.name.length > FILENAME_WARN_LEN ? renameFile(f, truncateFilename(f.name)) : f);
+}
+
 // ── Target file / Batch upload ─────────────────────────────────────────────
 
 const WARN_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 const WARN_FILE_COUNT = 50;
 const ASSUMED_THROUGHPUT = 5 * 1024 * 1024; // 5 MB/s (conservative localhost estimate)
+const FILENAME_WARN_LEN  = 60;             // chars; prompt user when filename exceeds this
+const FILENAME_TRUNC_LEN = 40;             // max stem length after auto-truncation
 
-function handleFilesSelected(fileList) {
-    const files = Array.from(fileList);
+async function handleFilesSelected(fileList) {
+    let files = Array.from(fileList);
     if (!files.length) return;
+
+    files = await checkLongFilenames(files);
 
     const totalBytes = files.reduce((s, f) => s + f.size, 0);
     const estSeconds = totalBytes / ASSUMED_THROUGHPUT;
@@ -1110,6 +1278,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // run / console
         playAll:              document.getElementById('playAll'),
         consoleClear:         document.getElementById('consoleClear'),
+        consoleCopy:          document.getElementById('consoleCopy'),
+        consoleDebugToggle:   document.getElementById('consoleDebugToggle'),
+        // rename modal
+        renameModal:          document.getElementById('renameModal'),
+        renameModalClose:     document.getElementById('renameModalClose'),
     };
 
     // Sortable
@@ -1134,6 +1307,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.consoleClear.addEventListener('click', () => {
         el.consoleContent.innerHTML = '';
         log('Console cleared.', 'system');
+    });
+    el.consoleCopy.addEventListener('click', copyConsoleToClipboard);
+    el.consoleDebugToggle.addEventListener('click', () => {
+        if (_logSource) stopServerDebug(); else startServerDebug();
     });
 
     // File / folder pickers
@@ -1243,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); saveOutput(); }
         if (ctrl && e.key === 's' &&  e.shiftKey) { e.preventDefault(); saveOutputAs(); }
         if (ctrl && e.key === 'p') { e.preventDefault(); savePreset(); }
-        if (e.key === 'Escape') { closePresetLibrary(); closeChoosePlugins(); closeSettings(); closeImportDropdown(); closeExportDropdown(); }
+        if (e.key === 'Escape') { closePresetLibrary(); closeChoosePlugins(); closeSettings(); closeImportDropdown(); closeExportDropdown(); el.renameModal.classList.remove('open'); }
     });
 
     // Boot
@@ -1262,5 +1439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshUndoRedoButtons();
     updateOutputState();
     updatePresetFilenameDisplay();
+    if (localStorage.getItem('serverDebug') === '1') startServerDebug();
+    else updateDebugToggle();
     log('System ready.', 'system');
 });
