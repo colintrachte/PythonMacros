@@ -14,14 +14,42 @@
         <div class="header-left">
             <div class="logo">PY<span>·</span>AUTOMATE</div>
 
-            <div class="workspace-pill" id="workspaceBtn" title="Click to change workspace">
-                <div>
-                    <div class="workspace-pill-label">Workspace</div>
-                    <div class="workspace-pill-value" id="workspaceDisplay">Loading…</div>
+            <!-- Choose Plugins anchor -->
+            <div class="choose-plugins-wrap" id="choosePluginsWrap">
+                <button class="choose-plugins-btn" id="choosePluginsBtn"
+                        title="Choose which plugins are available in this session">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                    </svg>
+                    <span>Plugins</span>
+                    <span class="choose-plugins-badge" id="choosePluginsBadge" style="display:none"></span>
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+
+                <!-- Choose Plugins panel — same structure as add-step dropdown -->
+                <div class="choose-plugins-panel" id="choosePluginsPanel">
+                    <div class="plugin-search-wrap">
+                        <input class="plugin-search" id="chooseSearch" type="text"
+                               placeholder="Search plugins…" autocomplete="off">
+                    </div>
+                    <div class="tag-bar" id="chooseTagBar" style="display:none"></div>
+                    <ul class="plugin-list choose-list" id="chooseList"></ul>
+                    <div class="choose-footer">
+                        <span class="choose-count" id="chooseCount">All available</span>
+                        <button class="tb-btn tb-btn-xs" id="clearChooseBtn">Clear</button>
+                        <div style="flex:1"></div>
+                        <button class="tb-btn tb-btn-xs new-plugin-trigger" id="newPluginTrigger">
+                            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 4v16m8-8H4"/>
+                            </svg>
+                            New Plugin with AI
+                        </button>
+                    </div>
                 </div>
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                </svg>
             </div>
         </div>
 
@@ -34,7 +62,7 @@
 
             <div class="btn-divider"></div>
 
-            <button class="run-btn" id="playAll" title="Run sequence (active steps only)">
+            <button class="run-btn" id="playAll" title="Run pipeline (active steps only)">
                 <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z"/>
                 </svg>
@@ -88,6 +116,14 @@
                 <span class="section-title">Processing Steps</span>
                 <div class="preset-bar">
                     <span class="preset-bar-label">Preset</span>
+                    <button class="tb-btn tb-btn-xs" id="presetLibraryBtn" title="Browse saved presets">
+                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        Library
+                    </button>
+                    <div class="btn-divider"></div>
                     <button class="tb-btn tb-btn-xs" id="savePresetBtn" title="Save preset (Ctrl+P)">
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -134,7 +170,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M12 4v16m8-8H4"/>
                     </svg>
-                    Add Processing Step
+                    <span id="addStepLabel">Add Processing Step</span>
                 </button>
 
                 <div class="plugin-dropdown" id="pluginDropdown">
@@ -142,13 +178,75 @@
                         <input class="plugin-search" id="pluginSearch" type="text"
                                placeholder="Search plugins…" autocomplete="off">
                     </div>
-                    <!-- Tag filter chips — hidden until tags exist -->
                     <div class="tag-bar" id="tagBar" style="display:none"></div>
                     <ul class="plugin-list" id="pluginList"></ul>
                 </div>
             </div>
         </div>
     </main>
+
+    <!-- ── Preset Library Modal ────────────────────────────────────── -->
+    <div class="modal-overlay" id="presetLibraryOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Preset Library</span>
+                <div class="modal-header-right">
+                    <select class="modal-sort" id="presetSortSelect">
+                        <option value="uses">Most Used</option>
+                        <option value="success_rate">Best Success Rate</option>
+                        <option value="last_used">Recently Used</option>
+                        <option value="name">Name</option>
+                    </select>
+                    <button class="modal-close" id="presetLibraryClose" title="Close">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" id="presetLibraryBody"></div>
+        </div>
+    </div>
+
+    <!-- ── New Plugin Modal ────────────────────────────────────────── -->
+    <div class="modal-overlay" id="newPluginOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">New Plugin with AI</span>
+                <button class="modal-close" id="newPluginClose" title="Close">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body new-plugin-body">
+                <label class="np-label">Describe what the plugin should do</label>
+                <textarea class="np-textarea" id="pluginDescription" rows="5"
+                    placeholder="e.g. Remove all comment lines from G-code, convert feed rates from inches/min to mm/min, and add a timestamp header at the top of the file."></textarea>
+
+                <div class="np-row">
+                    <label class="np-label">Filename</label>
+                    <input class="np-input" type="text" id="pluginFilename" placeholder="my_plugin.py">
+                </div>
+
+                <button class="run-btn np-generate" id="generatePluginBtn">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Generate
+                </button>
+
+                <div class="code-preview-wrap" id="codePreviewWrap" style="display:none">
+                    <div class="code-preview-header">
+                        <span class="code-preview-title" id="codePreviewTitle">Generated code</span>
+                        <button class="saveas-confirm" id="savePluginBtn">Save to plugins/</button>
+                    </div>
+                    <pre class="code-preview" id="codePreview"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ── Console ─────────────────────────────────────────────────── -->
     <div class="console-toolbar" id="consoleToolbar">

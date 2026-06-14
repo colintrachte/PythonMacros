@@ -23,7 +23,8 @@ HISTORY_DIR  = os.path.join(BASE_DIR, 'history')
 SESSION_FILE = os.path.join(BASE_DIR, 'last_session.json')
 CONFIG_FILE  = os.path.join(BASE_DIR, 'config_info.json')
 DEFAULT_WS   = os.path.join(BASE_DIR, 'workspaces')
-PRESETS_DIR  = os.path.join(BASE_DIR, 'presets')
+PRESETS_DIR       = os.path.join(BASE_DIR, 'presets')
+PRESETS_META_FILE = os.path.join(BASE_DIR, 'presets', 'presets_meta.json')
 HISTORY_META = os.path.join(HISTORY_DIR, 'meta.json')
 MAX_HISTORY  = 50
 MAX_SESSIONS = 5
@@ -317,11 +318,32 @@ def upload_file():
     f = request.files['file']
     if not f.filename:
         return jsonify({"error": "Empty filename"}), 400
-    filename = os.path.basename(f.filename)
-    session_name, session_path = new_session_dir(filename)
+    filename     = os.path.basename(f.filename)
+    existing_dir = request.form.get('session_dir', '').strip()
+
+    if existing_dir:
+        session_name = os.path.basename(existing_dir)
+        session_path = os.path.join(get_config()['workspace'], session_name)
+        if not os.path.isdir(session_path):
+            return jsonify({"error": "Session not found"}), 404
+    else:
+        session_name, session_path = new_session_dir(filename)
+
     f.save(os.path.join(session_path, filename))
-    with open(os.path.join(session_path, 'session.json'), 'w') as mf:
-        json.dump({"filename": filename, "session_dir": session_name}, mf)
+
+    meta_path = os.path.join(session_path, 'session.json')
+    try:
+        with open(meta_path) as mf:
+            meta = json.load(mf)
+    except (FileNotFoundError, json.JSONDecodeError):
+        meta = {"files": [], "session_dir": session_name}
+    if "files" not in meta:
+        meta["files"] = [meta.get("filename", filename)]
+    if filename not in meta["files"]:
+        meta["files"].append(filename)
+    with open(meta_path, 'w') as mf:
+        json.dump(meta, mf)
+
     return jsonify({
         "status":      "success",
         "filename":    filename,
@@ -390,12 +412,78 @@ def save_preset():
     return jsonify({"status": "success", "filename": basename})
 
 
+def read_presets_meta() -> dict:
+    try:
+        with open(PRESETS_META_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_presets_meta(meta: dict):
+    with open(PRESETS_META_FILE, 'w') as f:
+        json.dump(meta, f, indent=4)
+
+
 @app.route('/list_presets', methods=['GET'])
 def list_presets():
     try:
-        return jsonify(sorted(f for f in os.listdir(PRESETS_DIR) if f.endswith('.json')))
+        meta  = read_presets_meta()
+        files = sorted(f for f in os.listdir(PRESETS_DIR)
+                       if f.endswith('.json') and f != 'presets_meta.json')
+        result = []
+        for filename in files:
+            m    = meta.get(filename, {})
+            uses = m.get('uses', 0)
+            succ = m.get('successes', 0)
+            # Count steps by reading the file
+            try:
+                with open(os.path.join(PRESETS_DIR, filename)) as pf:
+                    steps = json.load(pf)
+                step_count = len(steps) if isinstance(steps, list) else 0
+            except Exception:
+                step_count = 0
+            result.append({
+                'filename':     filename,
+                'uses':         uses,
+                'successes':    succ,
+                'success_rate': round(succ / uses, 2) if uses > 0 else None,
+                'step_count':   step_count,
+                'last_used':    m.get('last_used'),
+            })
+        return jsonify(result)
     except Exception:
         return jsonify([])
+
+
+@app.route('/presets/<filename>', methods=['GET'])
+def get_preset(filename):
+    filename = os.path.basename(filename)
+    path = os.path.join(PRESETS_DIR, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "Not found"}), 404
+    try:
+        with open(path, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/preset_event', methods=['POST'])
+def preset_event():
+    filename = os.path.basename(request.json.get('filename', '').strip())
+    event    = request.json.get('event', '')
+    if not filename or event not in ('loaded', 'success'):
+        return jsonify({"error": "Invalid request"}), 400
+    meta = read_presets_meta()
+    entry = meta.setdefault(filename, {"uses": 0, "successes": 0, "last_used": None})
+    if event == 'loaded':
+        entry['uses'] += 1
+        entry['last_used'] = datetime.now().isoformat(timespec='seconds')
+    elif event == 'success':
+        entry['successes'] += 1
+    write_presets_meta(meta)
+    return jsonify({"status": "ok"})
 
 
 # ── History routes ─────────────────────────────────────────────────────────
@@ -597,6 +685,105 @@ def execute_scripts():
 
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ── AI plugin generation ───────────────────────────────────────────────────
+
+_PLUGIN_SYSTEM_PROMPT = """\
+You are writing a plugin for PY-AUTOMATE, a local file-processing pipeline tool.
+
+Plugins are plain Python files in the plugins/ folder. Each public function becomes
+a pipeline step. The simplest (and preferred) signature is the legacy style:
+
+    def my_step(lines: list[str]) -> list[str]: ...
+
+lines is the file split into individual lines (newlines preserved).
+Return the transformed line list.
+
+File-level metadata (optional, but include it):
+
+    PLUGIN_META = {
+        "label":       "Short human name",
+        "description": "One sentence.",
+        "accepts":     ["text/x-gcode"],   # MIME types this works on
+        "outputs":     ["text/x-gcode"],
+        "tags":        ["gcode"],          # for filtering in the UI
+    }
+
+Rules:
+- No markdown, no explanation — output ONLY the .py file content.
+- Keep functions small and focused; one logical task per function.
+- Standard library only unless the user requests a specific package.
+- Follow the style of this example exactly:
+
+import re
+
+PLUGIN_META = {
+    "label":       "G-code Normaliser",
+    "description": "Converts G00/G01 to G1 and rounds coordinates to 2 dp.",
+    "accepts":     ["text/x-gcode"],
+    "outputs":     ["text/x-gcode"],
+    "tags":        ["gcode"],
+}
+
+def normalize_moves(lines):
+    result = []
+    for line in lines:
+        line = re.sub(r'\\bG0[01]\\b', 'G1', line)
+        line = re.sub(r'([A-Z])(-?\\d+\\.\\d+)',
+                      lambda m: f"{m.group(1)}{float(m.group(2)):.2f}", line)
+        result.append(line)
+    return result
+"""
+
+
+@app.route('/generate_plugin', methods=['POST'])
+def generate_plugin():
+    description = (request.json or {}).get('description', '').strip()
+    if not description:
+        return jsonify({"error": "No description provided"}), 400
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY is not set in the environment."}), 400
+
+    try:
+        import anthropic as ant
+    except ImportError:
+        return jsonify({"error": "anthropic package not installed"}), 500
+
+    client  = ant.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model      = "claude-sonnet-4-6",
+        max_tokens = 2048,
+        system     = _PLUGIN_SYSTEM_PROMPT,
+        messages   = [{"role": "user", "content": description}],
+    )
+
+    code = message.content[0].text.strip()
+    # Strip accidental markdown fences
+    if code.startswith('```'):
+        lines = code.splitlines()
+        start = 1
+        end   = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
+        code  = '\n'.join(lines[start:end])
+
+    return jsonify({"code": code})
+
+
+@app.route('/save_plugin', methods=['POST'])
+def save_plugin():
+    body     = request.json or {}
+    code     = body.get('code', '').strip()
+    filename = os.path.basename(body.get('filename', '').strip())
+    if not code or not filename:
+        return jsonify({"error": "Missing code or filename"}), 400
+    if not filename.endswith('.py'):
+        filename += '.py'
+    dest = os.path.join(PLUGIN_DIR, filename)
+    with open(dest, 'w') as f:
+        f.write(code)
+    return jsonify({"status": "ok", "filename": filename})
 
 
 if __name__ == '__main__':
