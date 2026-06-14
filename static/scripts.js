@@ -13,6 +13,12 @@ const state = {
     outputFilename:        null,
     currentPresetName:     null,
     pluginCache:           [],
+    // Batch
+    batchFiles:            [],    // [{name, size, file}] for current selection
+    pendingFiles:          [],    // held during warn prompt before upload starts
+    isBatchSession:        false, // true when session has >1 file
+    batchRunDone:          false, // true after a batch run completes
+    uploadAbortFlag:       false,
     // Choose Plugins
     sessionPlugins:        null,   // null = all available; Set = restricted set
     chooseTagFilter:       null,   // tag filter inside the choose panel
@@ -22,7 +28,6 @@ const state = {
     pluginDropdownOpen:    false,
     // Modals
     presetLibraryOpen:     false,
-    newPluginOpen:         false,
     cachedPresets:         [],
 };
 
@@ -126,7 +131,9 @@ function renderSequence(steps) {
 }
 
 function updateEmptyState() {
-    el.emptyState.classList.toggle('visible', el.scriptList.children.length === 0);
+    const empty = el.scriptList.children.length === 0;
+    el.emptyState.classList.toggle('visible', empty);
+    if (empty) el.playAll.disabled = true;
 }
 
 // ── History / autosave ─────────────────────────────────────────────────────
@@ -179,15 +186,39 @@ async function performRedo() {
 
 // ── Output management ──────────────────────────────────────────────────────
 
+function fmtBytes(bytes) {
+    if (bytes < 1024)        return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function updateOutputState() {
-    const ready = !!(state.sessionDir && state.outputFilename);
-    el.saveOutputBtn.disabled    = !ready;
-    el.saveOutputAsBtn.disabled  = !ready;
-    el.outputFilename.textContent = ready ? state.outputFilename : '';
-    el.outputFilename.classList.toggle('named', ready);
+    const batchReady  = state.isBatchSession && state.batchRunDone;
+    const singleReady = !!(state.sessionDir && state.outputFilename && !state.isBatchSession);
+    const ready = batchReady || singleReady;
+    el.exportBtn.disabled = !ready;
+    if (batchReady) {
+        el.outputFilename.textContent = `${state.batchFiles.length} files processed`;
+        el.outputFilename.classList.add('named');
+    } else if (singleReady) {
+        el.outputFilename.textContent = state.outputFilename;
+        el.outputFilename.classList.toggle('named', true);
+    } else {
+        el.outputFilename.textContent = '';
+        el.outputFilename.classList.remove('named');
+    }
 }
 
 function saveOutput() {
+    if (state.isBatchSession) {
+        if (!state.batchRunDone || !state.sessionDir) return;
+        const url = `${API_BASE}/download_batch?session_dir=${encodeURIComponent(state.sessionDir)}`;
+        const a   = document.createElement('a');
+        a.href = url; a.download = `${state.sessionDir}_output.zip`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        log(`Downloading batch zip…`, 'success');
+        return;
+    }
     if (!state.sessionDir || !state.outputFilename) return;
     const url = `${API_BASE}/download_output`
         + `?session_dir=${encodeURIComponent(state.sessionDir)}`
@@ -199,6 +230,7 @@ function saveOutput() {
 }
 
 async function saveOutputAs() {
+    if (state.isBatchSession) { saveOutput(); return; }
     if (!state.sessionDir || !state.outputFilename) return;
     const url = `${API_BASE}/download_output`
         + `?session_dir=${encodeURIComponent(state.sessionDir)}`
@@ -444,10 +476,20 @@ function renderChooseList() {
                     <span class="plugin-item-key">${p.key}</span>
                     ${p.description ? `<span class="plugin-item-desc">${p.description}</span>` : ''}
                 </div>
-            </label>`;
+            </label>
+            <button class="plugin-edit-btn" title="Edit ${p.key}.py">
+                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+            </button>`;
 
         li.querySelector('.choose-checkbox').addEventListener('change', e => {
             toggleSessionPlugin(p.key, e.target.checked);
+        });
+        li.querySelector('.plugin-edit-btn').addEventListener('click', e => {
+            e.stopPropagation();
+            openPluginEditor(`${p.key}.py`);
         });
         el.chooseList.appendChild(li);
     });
@@ -589,10 +631,14 @@ function renderPluginList(plugins) {
             + (mimeMatch ? '' : ' plugin-mime-mismatch')
             + (depOk     ? '' : ' plugin-dep-missing');
 
+        const countBadge = (p.func_count > 1)
+            ? `<span class="plugin-badge badge-ops">${p.func_count} ops</span>`
+            : '';
         li.innerHTML = `
             <div class="plugin-item-body">
                 <div class="plugin-item-label">
                     ${p.label || p.key}
+                    ${countBadge}
                     ${!mimeMatch ? `<span class="plugin-badge badge-mime">type mismatch</span>` : ''}
                     ${!depOk    ? `<span class="plugin-badge badge-dep" title="Missing: ${(p.missing_deps||[]).join(', ')}">missing deps</span>` : ''}
                 </div>
@@ -600,10 +646,20 @@ function renderPluginList(plugins) {
                 ${p.description ? `<div class="plugin-item-desc">${p.description}</div>` : ''}
                 ${(p.tags||[]).length ? `<div class="plugin-item-tags">${p.tags.map(t=>`<span class="tag-label">${t}</span>`).join('')}</div>` : ''}
             </div>
+            <button class="plugin-edit-btn" title="Edit ${p.key}.py">
+                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+            </button>
             <svg class="plugin-item-arrow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>`;
 
+        li.querySelector('.plugin-edit-btn').addEventListener('click', e => {
+            e.stopPropagation();
+            openPluginEditor(`${p.key}.py`);
+        });
         li.addEventListener('click', () => {
             el.scriptList.appendChild(createStepEl({ pluginKey: p.key }));
             updateEmptyState(); pushHistoryAndSave(); closePluginDropdown();
@@ -612,105 +668,244 @@ function renderPluginList(plugins) {
     });
 }
 
-// ── New Plugin with AI ─────────────────────────────────────────────────────
+// ── Settings panel ─────────────────────────────────────────────────────────
 
-function openNewPluginModal() {
-    closeChoosePlugins();
-    state.newPluginOpen = true;
-    el.newPluginOverlay.classList.add('open');
-    el.pluginDescription.value = '';
-    el.pluginFilename.value    = '';
-    el.codePreviewWrap.style.display = 'none';
-    el.pluginDescription.focus();
-}
+let settingsOpen = false;
 
-function closeNewPluginModal() {
-    state.newPluginOpen = false;
-    el.newPluginOverlay.classList.remove('open');
-}
+async function openSettings() {
+    if (settingsOpen) { closeSettings(); return; }
+    settingsOpen = true;
+    el.settingsPanel.classList.add('open');
+    el.settingsBody.innerHTML = '<div class="settings-loading">Loading…</div>';
 
-async function generatePlugin() {
-    const desc = el.pluginDescription.value.trim();
-    if (!desc) { log('Please describe what the plugin should do.', 'warn'); return; }
-
-    el.generatePluginBtn.disabled   = true;
-    el.generatePluginBtn.textContent = 'Generating…';
-    el.codePreviewWrap.style.display = 'none';
-
+    let d;
     try {
-        const r    = await fetch(`${API_BASE}/generate_plugin`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ description: desc }),
-        });
-        const data = await r.json();
-        if (data.error) throw new Error(data.error);
-
-        el.codePreview.textContent       = data.code;
-        el.codePreviewWrap.style.display = '';
-        el.codePreviewTitle.textContent  = 'Generated plugin — review before saving';
-        log('Plugin generated. Review the code, then save.', 'success');
+        d = await (await fetch(`${API_BASE}/settings_info`)).json();
     } catch (e) {
-        log('Generation failed: ' + e.message, 'error');
-    } finally {
-        el.generatePluginBtn.disabled    = false;
-        el.generatePluginBtn.innerHTML   = `<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-        </svg> Generate`;
+        el.settingsBody.innerHTML = `<div class="settings-loading">Could not load settings.</div>`;
+        return;
+    }
+
+    const apiStatus = d.api_key_set
+        ? `<span class="settings-status ok">✓ Set</span>`
+        : `<span class="settings-status warn">✗ Not set</span>`;
+
+    el.settingsBody.innerHTML = `
+        <div class="settings-section">Workspace</div>
+        <div class="settings-row settings-edit-row">
+            <input class="settings-input" id="wsInput" type="text"
+                   value="${d.workspace.replace(/"/g, '&quot;')}" spellcheck="false">
+            <button class="settings-save-btn" id="wsSaveBtn">Save</button>
+        </div>
+        <div class="settings-section">Claude API Key</div>
+        <div class="settings-row settings-edit-row">
+            <input class="settings-input" id="apiInput" type="password"
+                   placeholder="${d.api_key_set ? '(stored — paste to replace)' : 'sk-ant-api…'}"
+                   spellcheck="false">
+            <button class="settings-save-btn" id="apiSaveBtn">Save</button>
+        </div>
+        <div class="settings-row">
+            <span class="settings-key">Status</span>
+            ${apiStatus}
+        </div>
+        <div class="settings-section">Plugins</div>
+        <div class="settings-row">
+            <code class="settings-val">${d.plugin_dir}</code>
+            <span class="settings-meta">${d.plugin_count} plugin${d.plugin_count !== 1 ? 's' : ''}</span>
+        </div>`;
+
+    function flashBtn(btn, ok) {
+        btn.textContent = ok ? '✓' : '✗';
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1600);
+    }
+
+    // Workspace
+    const wsInput   = document.getElementById('wsInput');
+    const wsSaveBtn = document.getElementById('wsSaveBtn');
+    const saveWorkspace = async () => {
+        const path = wsInput.value.trim();
+        if (!path) return;
+        try {
+            const r = await fetch(`${API_BASE}/set_workspace`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path }),
+            });
+            flashBtn(wsSaveBtn, !(await r.json()).error);
+        } catch (_) { flashBtn(wsSaveBtn, false); }
+    };
+    wsSaveBtn.addEventListener('click', saveWorkspace);
+    wsInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveWorkspace(); });
+
+    // API key
+    const apiInput   = document.getElementById('apiInput');
+    const apiSaveBtn = document.getElementById('apiSaveBtn');
+    const saveApiKey = async () => {
+        const key = apiInput.value.trim();
+        if (!key) return;
+        try {
+            const r = await fetch(`${API_BASE}/set_api_key`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key }),
+            });
+            const result = await r.json();
+            if (!result.error) {
+                apiInput.value = '';
+                apiInput.placeholder = '(stored — paste to replace)';
+                const s = el.settingsBody.querySelector('.settings-status');
+                if (s) { s.className = 'settings-status ok'; s.textContent = '✓ Set'; }
+            }
+            flashBtn(apiSaveBtn, !result.error);
+        } catch (_) { flashBtn(apiSaveBtn, false); }
+    };
+    apiSaveBtn.addEventListener('click', saveApiKey);
+    apiInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveApiKey(); });
+}
+
+function closeSettings() {
+    settingsOpen = false;
+    el.settingsPanel.classList.remove('open');
+}
+
+// ── Plugin editor navigation ───────────────────────────────────────────────
+
+function openPluginEditor(file) {
+    const url = '/plugin-editor' + (file ? `?file=${encodeURIComponent(file)}` : '');
+    window.open(url, '_blank');
+}
+
+// ── Target file / Batch upload ─────────────────────────────────────────────
+
+const WARN_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const WARN_FILE_COUNT = 50;
+const ASSUMED_THROUGHPUT = 5 * 1024 * 1024; // 5 MB/s (conservative localhost estimate)
+
+function handleFilesSelected(fileList) {
+    const files = Array.from(fileList);
+    if (!files.length) return;
+
+    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+    const estSeconds = totalBytes / ASSUMED_THROUGHPUT;
+    const needsWarn  = totalBytes > WARN_SIZE_BYTES || files.length > WARN_FILE_COUNT || estSeconds > 10;
+
+    if (needsWarn) {
+        state.pendingFiles = files;
+        showBatchWarning(files.length, totalBytes, estSeconds);
+    } else {
+        startUpload(files);
     }
 }
 
-async function savePlugin() {
-    const code     = el.codePreview.textContent.trim();
-    const filename = el.pluginFilename.value.trim() || 'generated_plugin.py';
-    if (!code) return;
-    try {
-        const r    = await fetch(`${API_BASE}/save_plugin`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ code, filename }),
-        });
-        const data = await r.json();
-        if (data.error) throw new Error(data.error);
-        log(`Plugin saved → plugins/${data.filename}`, 'success');
-        // Refresh plugin cache so it shows up immediately
-        try {
-            const pr = await fetch(`${API_BASE}/list_plugins`);
-            state.pluginCache = await pr.json();
-            updateChoosePluginsBtn();
-            updateAddStepLabel();
-        } catch (_) {}
-        closeNewPluginModal();
-    } catch (e) { log('Save failed: ' + e.message, 'error'); }
+function showBatchWarning(count, totalBytes, estSeconds) {
+    const est = estSeconds < 60
+        ? `~${Math.ceil(estSeconds)}s`
+        : `~${(estSeconds / 60).toFixed(1)} min`;
+    el.batchWarnText.textContent =
+        `${count} file${count !== 1 ? 's' : ''} · ${fmtBytes(totalBytes)} — estimated upload time ${est}. Continue?`;
+    el.batchWarn.style.display     = '';
+    el.batchProgress.style.display = 'none';
+    el.batchStrip.style.display    = '';
 }
 
-// ── Target file ────────────────────────────────────────────────────────────
+function hideBatchStrip() {
+    el.batchStrip.style.display    = 'none';
+    el.batchWarn.style.display     = 'none';
+    el.batchProgress.style.display = 'none';
+}
 
-async function handleFileSelected(file) {
-    state.selectedFile     = file;
-    state.selectedFileMime = guessMime(file.name);
-    state.sessionDir       = null;
-    state.outputFilename   = null;
+async function startUpload(files) {
+    state.uploadAbortFlag = false;
+    state.sessionDir      = null;
+    state.outputFilename  = null;
+    state.batchFiles      = [];
+    state.isBatchSession  = files.length > 1;
+    state.batchRunDone    = false;
+
+    // Reset display
+    state.selectedFile     = files[0];
+    state.selectedFileMime = guessMime(files[0].name);
+    el.batchWarn.style.display     = 'none';
+    el.batchProgress.style.display = '';
+    el.batchStrip.style.display    = '';
+
+    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+    let bytesDone = 0;
+
+    updateUploadProgress(0, files.length, 0, totalBytes);
+
+    for (let i = 0; i < files.length; i++) {
+        if (state.uploadAbortFlag) {
+            log(`Upload aborted after ${i} of ${files.length} file(s).`, 'warn');
+            break;
+        }
+
+        const file = files[i];
+        el.batchProgressText.textContent = `Uploading ${i + 1}/${files.length}: ${file.name}`;
+
+        const form = new FormData();
+        form.append('file', file);
+        if (state.sessionDir) form.append('session_dir', state.sessionDir);
+
+        try {
+            const data = await (await fetch(`${API_BASE}/upload`, { method: 'POST', body: form })).json();
+            if (data.error) { log(`Upload failed (${file.name}): ${data.error}`, 'error'); continue; }
+            if (!state.sessionDir) state.sessionDir = data.session_dir;
+            state.batchFiles.push({ name: data.filename, size: file.size });
+            bytesDone += file.size;
+            updateUploadProgress(i + 1, files.length, bytesDone, totalBytes);
+            if (!state.isBatchSession) state.outputFilename = data.filename;
+        } catch (e) {
+            log(`Upload failed (${file.name}): ${e.message}`, 'error');
+        }
+    }
+
+    hideBatchStrip();
     updateOutputState();
-    el.fileDisplay.textContent = file.name;
-    el.fileDisplay.classList.add('active');
-    log(`Target: ${file.name}  [${state.selectedFileMime}]`);
 
-    const form = new FormData();
-    form.append('file', file);
-    try {
-        const data = await (await fetch(`${API_BASE}/upload`, { method: 'POST', body: form })).json();
-        if (data.error) { log(`Upload failed: ${data.error}`, 'error'); return; }
-        state.sessionDir     = data.session_dir;
-        state.outputFilename = data.filename;
-        updateOutputState();
-        log(`Workspace ready: ${data.filename}`, 'success');
-    } catch (e) { log(`Upload failed: ${e.message}`, 'error'); }
+    const n = state.batchFiles.length;
+    if (n === 0) {
+        log('No files were uploaded.', 'error');
+    } else if (state.isBatchSession) {
+        const names = state.batchFiles.map(f => f.name);
+        el.fileDisplay.textContent = `${n} files (${fmtBytes(totalBytes)})`;
+        el.fileDisplay.classList.add('named');
+        log(`${n} file${n !== 1 ? 's' : ''} loaded: ${names.join(', ')}`, 'success');
+        log('Run the pipeline to process all files, then Save Output to download a zip.', 'system');
+    } else {
+        el.fileDisplay.textContent = state.batchFiles[0].name;
+        el.fileDisplay.classList.add('named');
+        log(`Workspace ready: ${state.batchFiles[0].name}`, 'success');
+    }
+}
+
+function updateUploadProgress(done, total, bytesDone, bytesTotal) {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    el.uploadBarFill.style.width       = `${pct}%`;
+    el.batchProgressCount.textContent  = `${done}/${total} files · ${fmtBytes(bytesDone)} / ${fmtBytes(bytesTotal)}`;
+}
+
+function abortUpload() {
+    state.uploadAbortFlag = true;
+    state.pendingFiles    = [];
+}
+
+function cancelBatchWarn() {
+    state.pendingFiles = [];
+    hideBatchStrip();
 }
 
 // ── Run ────────────────────────────────────────────────────────────────────
 
+async function executeSingleFile(filename, sessionDir, activeSteps) {
+    const r = await fetch(`${API_BASE}/execute`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ filename, session_dir: sessionDir, scripts: activeSteps }),
+    });
+    return r.json();
+}
+
 async function runSequence() {
-    if (!state.selectedFile) { log('No target file selected.', 'error'); return; }
-    if (!state.sessionDir)   { log('File not yet uploaded to workspace.', 'error'); return; }
+    if (!state.sessionDir) { log('No file loaded. Select a file or folder first.', 'error'); return; }
 
     const activeSteps = getSequence().filter(s => s.isChecked);
     if (!activeSteps.length) { log('No active steps to run.', 'warn'); return; }
@@ -724,27 +919,64 @@ async function runSequence() {
         return;
     }
 
-    log(`Running ${activeSteps.length} step(s) on ${state.selectedFile.name}…`);
-    try {
-        const r = await fetch(`${API_BASE}/execute`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({
-                filename:    state.selectedFile.name,
-                session_dir: state.sessionDir,
-                scripts:     activeSteps,
-            }),
-        });
-        const result = await r.json();
-        if (result.error) {
-            log(`Error: ${result.error}`, 'error');
-            if (result.completed?.length) log(`Completed before failure: ${result.completed.join(', ')}`, 'warn');
-        } else {
-            (result.steps||[]).forEach(s => { if (s.warning) log(`  ${s.step}: ${s.warning}`, 'warn'); });
-            log(`Done — ${result.message}  [${result.mime_type}]`, 'success');
-            log('Use "Save Output" to download the result.', 'system');
-            if (state.currentPresetName) recordPresetEvent(state.currentPresetName, 'success');
+    el.playAll.disabled = true;
+    state.batchRunDone  = false;
+
+    if (state.isBatchSession) {
+        const files  = state.batchFiles;
+        let failures = 0;
+        log(`Batch run: ${activeSteps.length} step(s) × ${files.length} file(s)…`);
+
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            el.playAll.innerHTML = `<svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> ${i + 1}/${files.length}`;
+            try {
+                const result = await executeSingleFile(f.name, state.sessionDir, activeSteps);
+                if (result.error) {
+                    log(`  [${f.name}] Error: ${result.error}`, 'error');
+                    failures++;
+                } else {
+                    (result.steps||[]).forEach(s => { if (s.warning) log(`  [${f.name}] ${s.step}: ${s.warning}`, 'warn'); });
+                    log(`  [${f.name}] Done`, 'success');
+                }
+            } catch (e) {
+                log(`  [${f.name}] Failed: ${e.message}`, 'error');
+                failures++;
+            }
         }
-    } catch (e) { log('Execution failed: ' + e.message, 'error'); }
+
+        el.playAll.disabled = false;
+        el.playAll.innerHTML = `<svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Run`;
+
+        if (failures === 0) {
+            log(`Batch complete — ${files.length} file(s) processed.`, 'success');
+            log('Use "Save Output" to download a zip of all results.', 'system');
+            state.batchRunDone = true;
+            if (state.currentPresetName) recordPresetEvent(state.currentPresetName, 'success');
+        } else {
+            log(`Batch done with ${failures} failure(s).`, 'warn');
+        }
+        updateOutputState();
+    } else {
+        const filename = state.batchFiles[0]?.name || state.selectedFile?.name;
+        if (!filename) { log('No file available.', 'error'); el.playAll.disabled = false; return; }
+        log(`Running ${activeSteps.length} step(s) on ${filename}…`);
+        try {
+            const result = await executeSingleFile(filename, state.sessionDir, activeSteps);
+            if (result.error) {
+                log(`Error: ${result.error}`, 'error');
+                if (result.completed?.length) log(`Completed before failure: ${result.completed.join(', ')}`, 'warn');
+            } else {
+                (result.steps||[]).forEach(s => { if (s.warning) log(`  ${s.step}: ${s.warning}`, 'warn'); });
+                log(`Done — ${result.message}  [${result.mime_type}]`, 'success');
+                log('Use "Save Output" to download the result.', 'system');
+                state.outputFilename = filename;
+                updateOutputState();
+                if (state.currentPresetName) recordPresetEvent(state.currentPresetName, 'success');
+            }
+        } catch (e) { log('Execution failed: ' + e.message, 'error'); }
+        el.playAll.disabled = false;
+    }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
@@ -759,11 +991,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         consoleToolbar:       document.getElementById('consoleToolbar'),
         resizeHandle:         document.getElementById('resizeHandle'),
         filePicker:           document.getElementById('filePicker'),
+        folderPicker:         document.getElementById('folderPicker'),
+        // import dropdown
+        importWrap:           document.getElementById('importWrap'),
+        importBtn:            document.getElementById('importBtn'),
+        importDropdown:       document.getElementById('importDropdown'),
+        importFilesOpt:       document.getElementById('importFilesOpt'),
+        importFolderOpt:      document.getElementById('importFolderOpt'),
+        // settings
+        settingsBtn:          document.getElementById('settingsBtn'),
+        settingsPanel:        document.getElementById('settingsPanel'),
+        settingsBody:         document.getElementById('settingsBody'),
+        settingsWrap:         document.getElementById('settingsWrap'),
+        // batch strip
+        batchStrip:           document.getElementById('batchStrip'),
+        batchWarn:            document.getElementById('batchWarn'),
+        batchWarnText:        document.getElementById('batchWarnText'),
+        batchProgress:        document.getElementById('batchProgress'),
+        batchProgressText:    document.getElementById('batchProgressText'),
+        batchProgressCount:   document.getElementById('batchProgressCount'),
+        uploadBarFill:        document.getElementById('uploadBarFill'),
         // toolbar
         undoBtn:              document.getElementById('undoBtn'),
         redoBtn:              document.getElementById('redoBtn'),
-        saveOutputBtn:        document.getElementById('saveOutputBtn'),
-        saveOutputAsBtn:      document.getElementById('saveOutputAsBtn'),
+        exportBtn:            document.getElementById('exportBtn'),
+        exportWrap:           document.getElementById('exportWrap'),
+        exportDropdown:       document.getElementById('exportDropdown'),
+        exportSaveOpt:        document.getElementById('exportSaveOpt'),
+        exportSaveAsOpt:      document.getElementById('exportSaveAsOpt'),
         outputFilename:       document.getElementById('outputFilename'),
         // choose plugins
         choosePluginsBtn:     document.getElementById('choosePluginsBtn'),
@@ -793,14 +1048,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         pluginSearch:         document.getElementById('pluginSearch'),
         pluginList:           document.getElementById('pluginList'),
         tagBar:               document.getElementById('tagBar'),
-        // new plugin modal
-        newPluginOverlay:     document.getElementById('newPluginOverlay'),
-        pluginDescription:    document.getElementById('pluginDescription'),
-        pluginFilename:       document.getElementById('pluginFilename'),
-        generatePluginBtn:    document.getElementById('generatePluginBtn'),
-        codePreviewWrap:      document.getElementById('codePreviewWrap'),
-        codePreviewTitle:     document.getElementById('codePreviewTitle'),
-        codePreview:          document.getElementById('codePreview'),
+        // plugin panel buttons
+        openPluginsFolderBtn: document.getElementById('openPluginsFolderBtn'),
         // run / console
         playAll:              document.getElementById('playAll'),
         consoleClear:         document.getElementById('consoleClear'),
@@ -830,22 +1079,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         log('Console cleared.', 'system');
     });
 
-    // File picker
+    // File / folder pickers
     el.filePicker.addEventListener('change', e => {
-        if (e.target.files[0]) handleFileSelected(e.target.files[0]);
+        if (e.target.files.length) handleFilesSelected(e.target.files);
+        e.target.value = '';
+    });
+    el.folderPicker.addEventListener('change', e => {
+        if (e.target.files.length) handleFilesSelected(e.target.files);
         e.target.value = '';
     });
 
-    // Output
-    el.saveOutputBtn.addEventListener('click',   saveOutput);
-    el.saveOutputAsBtn.addEventListener('click', saveOutputAs);
+    // Import dropdown
+    let importOpen = false;
+    function openImportDropdown()  { importOpen = true;  el.importDropdown.classList.add('open'); el.importBtn.classList.add('open'); }
+    function closeImportDropdown() { importOpen = false; el.importDropdown.classList.remove('open'); el.importBtn.classList.remove('open'); }
+    el.importBtn.addEventListener('click', e => { e.stopPropagation(); importOpen ? closeImportDropdown() : openImportDropdown(); });
+    el.importFilesOpt.addEventListener('click', () => { closeImportDropdown(); el.filePicker.click(); });
+    el.importFolderOpt.addEventListener('click', () => { closeImportDropdown(); el.folderPicker.click(); });
+
+    // Batch strip controls
+    document.getElementById('batchWarnCancel').addEventListener('click',   cancelBatchWarn);
+    document.getElementById('batchWarnContinue').addEventListener('click', () => {
+        const files = state.pendingFiles;
+        state.pendingFiles = [];
+        startUpload(files);
+    });
+    document.getElementById('batchAbortBtn').addEventListener('click', abortUpload);
+
+    // Export dropdown
+    let exportOpen = false;
+    function openExportDropdown()  { exportOpen = true;  el.exportDropdown.classList.add('open'); el.exportBtn.classList.add('open'); }
+    function closeExportDropdown() { exportOpen = false; el.exportDropdown.classList.remove('open'); el.exportBtn.classList.remove('open'); }
+    el.exportBtn.addEventListener('click', e => { e.stopPropagation(); if (!el.exportBtn.disabled) { exportOpen ? closeExportDropdown() : openExportDropdown(); } });
+    el.exportSaveOpt.addEventListener('click', () => { closeExportDropdown(); saveOutput(); });
+    el.exportSaveAsOpt.addEventListener('click', () => { closeExportDropdown(); saveOutputAs(); });
+
+    // Settings panel
+    el.settingsBtn.addEventListener('click', e => { e.stopPropagation(); openSettings(); });
 
     // Choose Plugins panel
     el.choosePluginsBtn.addEventListener('click', e => { e.stopPropagation(); openChoosePlugins(); });
     el.chooseSearch.addEventListener('input', renderChooseList);
     el.chooseSearch.addEventListener('keydown', e => { if (e.key === 'Escape') closeChoosePlugins(); });
     document.getElementById('clearChooseBtn').addEventListener('click', clearSessionPlugins);
-    document.getElementById('newPluginTrigger').addEventListener('click', openNewPluginModal);
+    document.getElementById('newPluginTrigger').addEventListener('click', () => { closeChoosePlugins(); openPluginEditor(); });
+    el.openPluginsFolderBtn.addEventListener('click', () => fetch(`${API_BASE}/open_plugins_folder`).catch(() => {}));
 
     // Preset bar
     el.presetLibraryBtn.addEventListener('click',  openPresetLibrary);
@@ -875,14 +1153,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.pluginSearch.addEventListener('input', () => renderPluginList(filteredForAddStep(state.pluginCache)));
     el.pluginSearch.addEventListener('keydown', e => { if (e.key === 'Escape') closePluginDropdown(); });
 
-    // New Plugin modal
-    document.getElementById('newPluginClose').addEventListener('click', closeNewPluginModal);
-    el.newPluginOverlay.addEventListener('click', e => { if (e.target === el.newPluginOverlay) closeNewPluginModal(); });
-    el.generatePluginBtn.addEventListener('click', generatePlugin);
-    document.getElementById('savePluginBtn').addEventListener('click', savePlugin);
-    el.pluginDescription.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generatePlugin(); }
-    });
 
     // Run
     el.playAll.addEventListener('click', runSequence);
@@ -897,6 +1167,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             !el.choosePluginsBtn.contains(e.target) &&
             !el.choosePluginsPanel.contains(e.target))
             closeChoosePlugins();
+        if (settingsOpen &&
+            !el.settingsWrap.contains(e.target))
+            closeSettings();
+        if (importOpen &&
+            !el.importWrap.contains(e.target))
+            closeImportDropdown();
+        if (exportOpen &&
+            !el.exportWrap.contains(e.target))
+            closeExportDropdown();
     });
 
     // Keyboard shortcuts
@@ -907,7 +1186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); saveOutput(); }
         if (ctrl && e.key === 's' &&  e.shiftKey) { e.preventDefault(); saveOutputAs(); }
         if (ctrl && e.key === 'p') { e.preventDefault(); savePreset(); }
-        if (e.key === 'Escape') { closePresetLibrary(); closeNewPluginModal(); closeChoosePlugins(); }
+        if (e.key === 'Escape') { closePresetLibrary(); closeChoosePlugins(); closeSettings(); closeImportDropdown(); closeExportDropdown(); }
     });
 
     // Boot

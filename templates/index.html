@@ -17,10 +17,10 @@
             <!-- Choose Plugins anchor -->
             <div class="choose-plugins-wrap" id="choosePluginsWrap">
                 <button class="choose-plugins-btn" id="choosePluginsBtn"
-                        title="Choose which plugins are available in this session">
+                        title="Choose which plugins are active in this session">
                     <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                              d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"/>
                     </svg>
                     <span>Plugins</span>
                     <span class="choose-plugins-badge" id="choosePluginsBadge" style="display:none"></span>
@@ -29,7 +29,6 @@
                     </svg>
                 </button>
 
-                <!-- Choose Plugins panel — same structure as add-step dropdown -->
                 <div class="choose-plugins-panel" id="choosePluginsPanel">
                     <div class="plugin-search-wrap">
                         <input class="plugin-search" id="chooseSearch" type="text"
@@ -41,28 +40,44 @@
                         <span class="choose-count" id="chooseCount">All available</span>
                         <button class="tb-btn tb-btn-xs" id="clearChooseBtn">Clear</button>
                         <div style="flex:1"></div>
+                        <button class="tb-btn tb-btn-xs" id="openPluginsFolderBtn" title="Open plugins folder in file explorer">
+                            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                            </svg>
+                        </button>
                         <button class="tb-btn tb-btn-xs new-plugin-trigger" id="newPluginTrigger">
                             <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M12 4v16m8-8H4"/>
                             </svg>
-                            New Plugin with AI
+                            New Plugin
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings anchor -->
+            <div class="settings-wrap" id="settingsWrap">
+                <button class="settings-btn" id="settingsBtn" title="Settings">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
+                <div class="settings-panel" id="settingsPanel">
+                    <div class="settings-title">Settings</div>
+                    <div class="settings-body" id="settingsBody">
+                        <div class="settings-loading">Loading…</div>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="header-right">
-            <label class="file-badge" title="Select target file to process">
-                <span class="file-badge-label">Target File</span>
-                <span class="file-badge-value" id="fileDisplay">No file selected</span>
-                <input type="file" id="filePicker" style="display:none">
-            </label>
-
-            <div class="btn-divider"></div>
-
-            <button class="run-btn" id="playAll" title="Run pipeline (active steps only)">
+            <button class="run-btn" id="playAll" title="Run pipeline on all loaded files (Ctrl+Enter)">
                 <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z"/>
                 </svg>
@@ -73,6 +88,7 @@
 
     <!-- ── Toolbar strip ───────────────────────────────────────────── -->
     <div class="toolbar-strip">
+        <!-- History -->
         <button class="tb-btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>
             <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -89,24 +105,95 @@
             Redo
         </button>
 
-        <div class="btn-divider"></div>
+        <div class="tb-section-divider"></div>
 
-        <button class="tb-btn" id="saveOutputBtn" title="Download processed output (Ctrl+S)" disabled>
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-            </svg>
-            Save Output
-        </button>
-        <button class="tb-btn" id="saveOutputAsBtn" title="Save output to chosen location (Ctrl+Shift+S)" disabled>
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4M12 4v8"/>
-            </svg>
-            Save Output As…
-        </button>
+        <!-- Import (file/folder picker) -->
+        <div class="import-wrap" id="importWrap">
+            <button class="tb-btn import-btn" id="importBtn" title="Import files or a folder">
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                Import
+                <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+            <div class="import-dropdown" id="importDropdown">
+                <button class="import-option" id="importFilesOpt">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Files
+                </button>
+                <button class="import-option" id="importFolderOpt">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                    </svg>
+                    Folder
+                </button>
+            </div>
+            <input type="file" id="filePicker" multiple style="display:none">
+            <input type="file" id="folderPicker" webkitdirectory multiple style="display:none">
+        </div>
+        <span class="tb-file-display" id="fileDisplay"></span>
 
+        <div class="tb-section-divider"></div>
+
+        <!-- Export dropdown -->
+        <div class="import-wrap" id="exportWrap">
+            <button class="tb-btn import-btn" id="exportBtn" title="Export output (Ctrl+S)" disabled>
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                Export
+                <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+            <div class="import-dropdown" id="exportDropdown">
+                <button class="import-option" id="exportSaveOpt">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Save
+                </button>
+                <button class="import-option" id="exportSaveAsOpt">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4M12 4v8"/>
+                    </svg>
+                    Save As…
+                </button>
+            </div>
+        </div>
         <span class="output-filename" id="outputFilename"></span>
+    </div>
+
+    <!-- ── Batch strip ───────────────────────────────────────────────── -->
+    <div class="batch-strip" id="batchStrip" style="display:none">
+        <!-- Large-batch warning -->
+        <div class="batch-warn" id="batchWarn" style="display:none">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--warning)">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <span id="batchWarnText"></span>
+            <div style="flex:1"></div>
+            <button class="tb-btn tb-btn-xs" id="batchWarnCancel">Cancel</button>
+            <button class="batch-continue-btn" id="batchWarnContinue">Continue Upload</button>
+        </div>
+        <!-- Upload progress -->
+        <div class="batch-progress" id="batchProgress" style="display:none">
+            <span id="batchProgressText">Uploading…</span>
+            <div class="upload-bar"><div class="upload-bar-fill" id="uploadBarFill" style="width:0%"></div></div>
+            <span id="batchProgressCount"></span>
+            <button class="tb-btn tb-btn-xs" id="batchAbortBtn">Abort</button>
+        </div>
     </div>
 
     <!-- ── Main ────────────────────────────────────────────────────── -->
@@ -115,8 +202,8 @@
             <div class="section-header">
                 <span class="section-title">Processing Steps</span>
                 <div class="preset-bar">
-                    <span class="preset-bar-label">Preset</span>
-                    <button class="tb-btn tb-btn-xs" id="presetLibraryBtn" title="Browse saved presets">
+                    <span class="preset-bar-label">Workflow</span>
+                    <button class="tb-btn tb-btn-xs" id="presetLibraryBtn" title="Browse saved workflows">
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
@@ -124,21 +211,21 @@
                         Library
                     </button>
                     <div class="btn-divider"></div>
-                    <button class="tb-btn tb-btn-xs" id="savePresetBtn" title="Save preset (Ctrl+P)">
+                    <button class="tb-btn tb-btn-xs" id="savePresetBtn" title="Save this pipeline as a workflow (Ctrl+P)">
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
                         </svg>
                         Save
                     </button>
-                    <button class="tb-btn tb-btn-xs" id="savePresetAsBtn" title="Save preset as…">
+                    <button class="tb-btn tb-btn-xs" id="savePresetAsBtn" title="Save pipeline as a new workflow name">
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                         </svg>
                         Save As
                     </button>
-                    <button class="tb-btn tb-btn-xs" id="loadPresetBtn" title="Load preset from file">
+                    <button class="tb-btn tb-btn-xs" id="loadPresetBtn" title="Load a saved workflow">
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
@@ -208,45 +295,6 @@
         </div>
     </div>
 
-    <!-- ── New Plugin Modal ────────────────────────────────────────── -->
-    <div class="modal-overlay" id="newPluginOverlay">
-        <div class="modal">
-            <div class="modal-header">
-                <span class="modal-title">New Plugin with AI</span>
-                <button class="modal-close" id="newPluginClose" title="Close">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-body new-plugin-body">
-                <label class="np-label">Describe what the plugin should do</label>
-                <textarea class="np-textarea" id="pluginDescription" rows="5"
-                    placeholder="e.g. Remove all comment lines from G-code, convert feed rates from inches/min to mm/min, and add a timestamp header at the top of the file."></textarea>
-
-                <div class="np-row">
-                    <label class="np-label">Filename</label>
-                    <input class="np-input" type="text" id="pluginFilename" placeholder="my_plugin.py">
-                </div>
-
-                <button class="run-btn np-generate" id="generatePluginBtn">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    Generate
-                </button>
-
-                <div class="code-preview-wrap" id="codePreviewWrap" style="display:none">
-                    <div class="code-preview-header">
-                        <span class="code-preview-title" id="codePreviewTitle">Generated code</span>
-                        <button class="saveas-confirm" id="savePluginBtn">Save to plugins/</button>
-                    </div>
-                    <pre class="code-preview" id="codePreview"></pre>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- ── Console ─────────────────────────────────────────────────── -->
     <div class="console-toolbar" id="consoleToolbar">

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plugin Editor — PY-AUTOMATE</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            padding-bottom: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Top bar ──────────────────────────────────────────── */
+
+        .pe-header {
+            background:    var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding:       0 20px;
+            height:        50px;
+            display:       flex;
+            align-items:   center;
+            gap:           14px;
+            flex-shrink:   0;
+        }
+
+        .pe-back {
+            display:     flex;
+            align-items: center;
+            gap:         6px;
+            padding:     5px 10px;
+            border-radius: 5px;
+            border:      1px solid var(--border);
+            background:  transparent;
+            color:       var(--text-secondary);
+            font-family: var(--sans);
+            font-size:   13px;
+            font-weight: 500;
+            cursor:      pointer;
+            text-decoration: none;
+            transition:  all var(--transition);
+            flex-shrink: 0;
+        }
+        .pe-back:hover { background: var(--surface-2); color: var(--text-primary); }
+
+        .pe-title {
+            font-family: var(--mono);
+            font-size:   14px;
+            font-weight: 700;
+            color:       var(--text-primary);
+        }
+
+        /* ── AI links bar ─────────────────────────────────────── */
+
+        .ai-bar {
+            background:    var(--surface);
+            border-bottom: 1px solid var(--border-subtle);
+            padding:       0 20px;
+            height:        38px;
+            display:       flex;
+            align-items:   center;
+            gap:           6px;
+            flex-shrink:   0;
+        }
+
+        .ai-bar-label {
+            font-size:      10px;
+            font-weight:    700;
+            color:          var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding-right:  10px;
+            border-right:   1px solid var(--border-subtle);
+            margin-right:   2px;
+            white-space:    nowrap;
+        }
+
+        .ai-link {
+            display:     inline-flex;
+            align-items: center;
+            gap:         5px;
+            padding:     3px 10px;
+            border-radius: 4px;
+            border:      1px solid var(--border);
+            background:  var(--surface-2);
+            color:       var(--text-secondary);
+            font-family: var(--sans);
+            font-size:   12px;
+            font-weight: 500;
+            text-decoration: none;
+            transition:  all var(--transition);
+            white-space: nowrap;
+        }
+        .ai-link:hover {
+            background:   var(--surface-3);
+            color:        var(--text-primary);
+            border-color: var(--accent);
+        }
+
+        /* ── Editor toolbar ───────────────────────────────────── */
+
+        .pe-toolbar {
+            background:    var(--surface);
+            border-bottom: 1px solid var(--border-subtle);
+            padding:       0 20px;
+            height:        44px;
+            display:       flex;
+            align-items:   center;
+            gap:           10px;
+            flex-shrink:   0;
+        }
+
+        .pe-filename {
+            background:   var(--surface-2);
+            border:       1px solid var(--border);
+            border-radius:6px;
+            padding:      5px 12px;
+            font-family:  var(--mono);
+            font-size:    13px;
+            color:        var(--text-primary);
+            outline:      none;
+            width:        210px;
+            transition:   border-color var(--transition);
+        }
+        .pe-filename:focus { border-color: var(--accent); }
+        .pe-filename::placeholder { color: var(--text-dim); }
+
+        .pe-save-btn {
+            display:     flex;
+            align-items: center;
+            gap:         6px;
+            padding:     6px 16px;
+            background:  var(--accent);
+            color:       #fff;
+            border:      none;
+            border-radius:6px;
+            font-family: var(--sans);
+            font-size:   13px;
+            font-weight: 600;
+            cursor:      pointer;
+            transition:  all var(--transition);
+        }
+        .pe-save-btn:hover    { background: #2563eb; }
+        .pe-save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .pe-status {
+            font-size:   12px;
+            font-weight: 600;
+            padding:     3px 10px;
+            border-radius:10px;
+            display:     none;
+            font-family: var(--sans);
+        }
+        .pe-status.ok  {
+            display:    inline-block;
+            background: var(--success-dim);
+            color:      var(--success);
+            border:     1px solid rgba(46,204,113,0.3);
+        }
+        .pe-status.err {
+            display:    inline-block;
+            background: var(--danger-dim);
+            color:      var(--danger);
+            border:     1px solid rgba(255,85,85,0.3);
+        }
+
+        /* ── Main split ───────────────────────────────────────── */
+
+        .pe-main {
+            display:   flex;
+            flex:      1;
+            overflow:  hidden;
+            height:    calc(100vh - 50px - 38px - 44px);
+        }
+
+        /* Reference pane */
+        .pe-ref {
+            width:         300px;
+            flex-shrink:   0;
+            border-right:  1px solid var(--border);
+            display:       flex;
+            flex-direction:column;
+            overflow:      hidden;
+            background:    var(--surface);
+        }
+
+        .pe-ref-header {
+            padding:        10px 14px 8px;
+            border-bottom:  1px solid var(--border-subtle);
+            flex-shrink:    0;
+        }
+
+        .pe-ref-title {
+            font-size:      11px;
+            font-weight:    700;
+            color:          var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .pe-ref-hint {
+            font-size:   11px;
+            color:       var(--text-dim);
+            margin-top:  4px;
+            line-height: 1.4;
+        }
+
+        .pe-ref-code {
+            flex:        1;
+            overflow-y:  auto;
+            padding:     14px;
+            font-family: var(--mono);
+            font-size:   12px;
+            color:       #8db0a8;
+            line-height: 1.65;
+            white-space: pre;
+            background:  #090d13;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+            user-select: text;
+        }
+
+        /* Editor pane */
+        .pe-editor-pane {
+            flex:           1;
+            display:        flex;
+            flex-direction: column;
+            overflow:       hidden;
+        }
+
+        .pe-editor {
+            flex:        1;
+            background:  #0b0f16;
+            border:      none;
+            padding:     16px 18px;
+            font-family: var(--mono);
+            font-size:   13px;
+            color:       #c8dcc8;
+            resize:      none;
+            outline:     none;
+            line-height: 1.65;
+            tab-size:    4;
+            width:       100%;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .pe-hint-bar {
+            padding:     6px 18px;
+            font-size:   11px;
+            color:       var(--text-dim);
+            background:  var(--surface);
+            border-top:  1px solid var(--border-subtle);
+            flex-shrink: 0;
+            display:     flex;
+            gap:         16px;
+        }
+
+        .pe-kbd {
+            font-family:  var(--mono);
+            font-size:    10px;
+            background:   var(--surface-2);
+            border:       1px solid var(--border);
+            border-radius:3px;
+            padding:      1px 4px;
+            color:        var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ── Header ──────────────────────────────────────────────── -->
+    <div class="pe-header">
+        <a href="/" class="pe-back">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+        </a>
+        <div class="logo" style="border:none;padding:0">PY<span>·</span>AUTOMATE</div>
+        <div style="width:1px;height:20px;background:var(--border)"></div>
+        <div class="pe-title" id="editorTitle">New Plugin</div>
+    </div>
+
+    <!-- ── AI links ────────────────────────────────────────────── -->
+    <div class="ai-bar">
+        <span class="ai-bar-label">Ask AI</span>
+        <a class="ai-link" href="https://claude.ai"          target="_blank" rel="noopener">Claude</a>
+        <a class="ai-link" href="https://chatgpt.com"        target="_blank" rel="noopener">ChatGPT</a>
+        <a class="ai-link" href="https://gemini.google.com"  target="_blank" rel="noopener">Gemini</a>
+        <a class="ai-link" href="https://perplexity.ai"      target="_blank" rel="noopener">Perplexity</a>
+        <a class="ai-link" href="https://grok.com"           target="_blank" rel="noopener">Grok</a>
+        <a class="ai-link" href="https://chat.mistral.ai"    target="_blank" rel="noopener">Mistral</a>
+    </div>
+
+    <!-- ── Toolbar ─────────────────────────────────────────────── -->
+    <div class="pe-toolbar">
+        <input class="pe-filename" type="text" id="filenameInput" placeholder="my_plugin.py">
+        <button class="pe-save-btn" id="saveBtn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+            Save to plugins/
+        </button>
+        <span class="pe-status" id="statusPill"></span>
+    </div>
+
+    <!-- ── Main ────────────────────────────────────────────────── -->
+    <div class="pe-main">
+
+        <!-- Left: reference / template -->
+        <div class="pe-ref">
+            <div class="pe-ref-header">
+                <div class="pe-ref-title">Plugin Template</div>
+                <div class="pe-ref-hint">Copy this into any AI chat, describe what you want, then paste the result in the editor.</div>
+            </div>
+            <div class="pe-ref-code" id="refCode"></div>
+        </div>
+
+        <!-- Right: editor -->
+        <div class="pe-editor-pane">
+            <textarea class="pe-editor" id="codeEditor" spellcheck="false"
+                      placeholder="Paste your AI-generated plugin code here…"></textarea>
+            <div class="pe-hint-bar">
+                <span>Paste generated code in the editor, set a filename, then save.</span>
+                <span><span class="pe-kbd">Tab</span> = 4 spaces &nbsp;·&nbsp; <span class="pe-kbd">Ctrl+S</span> = save</span>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+    const API_BASE = 'http://localhost:5000';
+
+    const TEMPLATE = `# ── PY-AUTOMATE Plugin ───────────────────────────────────
+#
+# Paste this entire block into any AI chat as context,
+# then describe what you want the plugin to do.
+# The AI will output code you can paste into the editor.
+#
+# ─────────────────────────────────────────────────────────
+
+PLUGIN_META = {
+    "label":       "My Plugin",       # name shown in the UI
+    "description": "What this does.", # one-line summary
+    "accepts":     ["text/plain"],    # MIME types it works on
+    "outputs":     ["text/plain"],    #   e.g. "text/x-gcode", "image/png"
+    "tags":        [],                # filter tags, e.g. ["gcode", "text"]
+}
+
+def my_step(lines):
+    """
+    lines  — list[str], the input file split into lines,
+             with newlines preserved (e.g. "G1 X10\\n").
+    Return — list[str], the transformed content.
+
+    Each public function in this file becomes one pipeline
+    step, run in top-to-bottom order.  Add more functions
+    for multi-step plugins.
+    """
+    result = []
+    for line in lines:
+        result.append(line)   # ← replace with your logic
+    return result
+`;
+
+    document.getElementById('refCode').textContent = TEMPLATE;
+
+    const editor      = document.getElementById('codeEditor');
+    const filenameEl  = document.getElementById('filenameInput');
+    const saveBtn     = document.getElementById('saveBtn');
+    const statusEl    = document.getElementById('statusPill');
+    const titleEl     = document.getElementById('editorTitle');
+
+    // Load existing plugin or leave blank for new
+    const params   = new URLSearchParams(location.search);
+    const editFile = params.get('file');
+
+    if (editFile) {
+        titleEl.textContent    = `Edit: ${editFile}`;
+        filenameEl.value       = editFile;
+        fetch(`${API_BASE}/get_plugin_source?file=${encodeURIComponent(editFile)}`)
+            .then(r => r.json())
+            .then(d => { if (d.code !== undefined) editor.value = d.code; })
+            .catch(() => {});
+    }
+
+    function showStatus(msg, type) {
+        statusEl.textContent = msg;
+        statusEl.className   = `pe-status ${type}`;
+        if (type === 'ok') setTimeout(() => { statusEl.className = 'pe-status'; }, 3000);
+    }
+
+    async function save() {
+        let fn = filenameEl.value.trim();
+        if (!fn) { showStatus('Enter a filename', 'err'); filenameEl.focus(); return; }
+        if (!fn.endsWith('.py')) fn += '.py';
+        filenameEl.value = fn;
+        const code = editor.value.trim();
+        if (!code) { showStatus('No code to save', 'err'); return; }
+
+        saveBtn.disabled = true;
+        try {
+            const r = await fetch(`${API_BASE}/save_plugin`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ code, filename: fn }),
+            });
+            const d = await r.json();
+            if (d.status === 'ok') {
+                showStatus(`Saved: ${d.filename}`, 'ok');
+                titleEl.textContent = `Edit: ${d.filename}`;
+                history.replaceState(null, '', `?file=${encodeURIComponent(d.filename)}`);
+            } else {
+                showStatus(d.error || 'Save failed', 'err');
+            }
+        } catch (e) {
+            showStatus('Server error', 'err');
+        }
+        saveBtn.disabled = false;
+    }
+
+    saveBtn.addEventListener('click', save);
+
+    editor.addEventListener('keydown', e => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const s = editor.selectionStart;
+            const end = editor.selectionEnd;
+            editor.value = editor.value.slice(0, s) + '    ' + editor.value.slice(end);
+            editor.selectionStart = editor.selectionEnd = s + 4;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            save();
+        }
+    });
+    </script>
+</body>
+</html>

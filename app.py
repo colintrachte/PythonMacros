@@ -1,6 +1,8 @@
+import io
 import os
 import re
 import json
+import zipfile
 import importlib.util
 import inspect
 import traceback
@@ -175,15 +177,20 @@ def _wrap_legacy(fn):
 
 def get_plugins() -> dict:
     """
-    Scan the plugins directory and return a dict keyed by "module.function":
+    Scan the plugins directory and return a dict keyed by module stem (one entry
+    per plugin file).  Legacy "module.function" keys are also stored with
+    _ui_hidden=True so saved pipelines built before this change still execute.
 
     {
-      "endmill_utils.add_printer_header": {
-        "func":         <callable(Payload) -> Payload>,
-        "meta":         { label, description, accepts, outputs, ... },
-        "deps_ok":      True,
+      "gcode_utils": {
+        "funcs":       [<callable>, ...],   # all public fns in file order
+        "meta":        { label, description, accepts, outputs, ... },
+        "deps_ok":     True,
         "missing_deps": [],
+        "_ui_hidden":  False,
+        "func_count":  N,
       },
+      "gcode_utils.remove_comments": { ..., "_ui_hidden": True },  # legacy compat
       ...
     }
     """
@@ -199,46 +206,64 @@ def get_plugins() -> dict:
 
         try:
             spec   = importlib.util.spec_from_file_location(module_name, path)
+            if spec is None or spec.loader is None:
+                continue
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception as e:
             print(f"[plugins] Failed to import {filename}: {e}")
             continue
 
-        # Start with global defaults, then overlay file-level PLUGIN_META
         file_meta = {**DEFAULT_META, **getattr(module, 'PLUGIN_META', {})}
 
+        # Module-level deps are checked once (they apply to all functions)
+        missing = []
+        for pkg in file_meta.get("requires", []):
+            try:
+                importlib.import_module(pkg.replace("-", "_"))
+            except ImportError:
+                missing.append(f"pip:{pkg}")
+        for binary in file_meta.get("external", []):
+            if shutil.which(binary) is None:
+                missing.append(f"bin:{binary}")
+        deps_ok = len(missing) == 0
+
+        module_funcs = []
         for fn_name, fn in inspect.getmembers(module, inspect.isfunction):
             if fn_name.startswith('_'):
-                continue  # skip private helpers
+                continue
+            callable_fn = _wrap_legacy(fn) if _is_legacy(fn) else fn
+            module_funcs.append(callable_fn)
 
-            key = f"{module_name}.{fn_name}"
-
-            # Per-function .plugin_meta overrides file-level values
+            # Legacy per-function key — kept for backwards compatibility with
+            # pipelines saved before the one-entry-per-file change.
             fn_meta = {**file_meta, **getattr(fn, 'plugin_meta', {})}
             if fn_meta["label"] is None:
-                fn_meta["label"] = key
-
-            # Auto-wrap legacy functions
-            callable_fn = _wrap_legacy(fn) if _is_legacy(fn) else fn
-
-            # Dependency check
-            missing = []
-            for pkg in fn_meta.get("requires", []):
-                try:
-                    importlib.import_module(pkg.replace("-", "_"))
-                except ImportError:
-                    missing.append(f"pip:{pkg}")
-            for binary in fn_meta.get("external", []):
-                if shutil.which(binary) is None:
-                    missing.append(f"bin:{binary}")
-
-            plugins[key] = {
-                "func":         callable_fn,
-                "meta":         fn_meta,
-                "deps_ok":      len(missing) == 0,
+                fn_meta["label"] = f"{module_name}.{fn_name}"
+            plugins[f"{module_name}.{fn_name}"] = {
+                "funcs":       [callable_fn],
+                "meta":        fn_meta,
+                "deps_ok":     deps_ok,
                 "missing_deps": missing,
+                "_ui_hidden":  True,
+                "func_count":  1,
             }
+
+        if not module_funcs:
+            continue
+
+        mod_meta = {**file_meta}
+        if mod_meta["label"] is None:
+            mod_meta["label"] = module_name.replace('_', ' ').title()
+
+        plugins[module_name] = {
+            "funcs":       module_funcs,
+            "meta":        mod_meta,
+            "deps_ok":     deps_ok,
+            "missing_deps": missing,
+            "_ui_hidden":  False,
+            "func_count":  len(module_funcs),
+        }
 
     return plugins
 
@@ -249,7 +274,11 @@ def get_config():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
-                return json.load(f)
+                cfg = json.load(f)
+            # Promote stored API key into the environment on first read
+            if not os.environ.get('ANTHROPIC_API_KEY') and cfg.get('api_key'):
+                os.environ['ANTHROPIC_API_KEY'] = cfg['api_key']
+            return cfg
         except (json.JSONDecodeError, IOError):
             pass
     return {"workspace": DEFAULT_WS}
@@ -295,6 +324,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route('/plugin-editor')
+def plugin_editor():
+    return render_template("plugin_editor.html")
+
+
 @app.route('/get_workspace', methods=['GET'])
 def get_workspace_route():
     return jsonify(get_config())
@@ -305,10 +339,24 @@ def set_workspace():
     path = request.json.get('path')
     if not path:
         return jsonify({"error": "No path provided"}), 400
-    config = {"workspace": path}
+    config = get_config()
+    config['workspace'] = path
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=4)
     return jsonify(config)
+
+
+@app.route('/set_api_key', methods=['POST'])
+def set_api_key():
+    key = (request.json or {}).get('key', '').strip()
+    if not key:
+        return jsonify({"error": "No key provided"}), 400
+    config = get_config()
+    config['api_key'] = key
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+    os.environ['ANTHROPIC_API_KEY'] = key
+    return jsonify({"status": "ok"})
 
 
 @app.route('/upload', methods=['POST'])
@@ -576,17 +624,43 @@ def history_status():
 
 # ── Plugin routes ──────────────────────────────────────────────────────────
 
+@app.route('/get_plugin_source', methods=['GET'])
+def get_plugin_source():
+    filename = os.path.basename(request.args.get('file', '').strip())
+    if not filename.endswith('.py'):
+        return jsonify({"error": "Invalid filename"}), 400
+    path = os.path.join(PLUGIN_DIR, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+    try:
+        with open(path, 'r', errors='replace') as f:
+            return jsonify({"code": f.read(), "filename": filename})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/open_plugins_folder', methods=['GET'])
+def open_plugins_folder():
+    import subprocess, sys
+    try:
+        if sys.platform == 'win32':
+            subprocess.Popen(['explorer', PLUGIN_DIR])
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', PLUGIN_DIR])
+        else:
+            subprocess.Popen(['xdg-open', PLUGIN_DIR])
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/list_plugins', methods=['GET'])
 def list_plugins():
-    """
-    Returns plugin descriptors to the UI.  Shape per entry:
-    {
-      key, label, description, accepts, outputs, tags, deps_ok, missing_deps
-    }
-    """
     plugins = get_plugins()
     result  = []
     for key, info in plugins.items():
+        if info.get("_ui_hidden"):
+            continue
         m = info["meta"]
         result.append({
             "key":          key,
@@ -597,8 +671,23 @@ def list_plugins():
             "tags":         m["tags"],
             "deps_ok":      info["deps_ok"],
             "missing_deps": info["missing_deps"],
+            "func_count":   info["func_count"],
         })
     return jsonify(result)
+
+
+@app.route('/settings_info', methods=['GET'])
+def settings_info():
+    plugin_count = len([
+        f for f in os.listdir(PLUGIN_DIR)
+        if f.endswith('.py') and f != '__init__.py'
+    ]) if os.path.exists(PLUGIN_DIR) else 0
+    return jsonify({
+        "api_key_set":   bool(os.environ.get('ANTHROPIC_API_KEY')),
+        "workspace":     get_config()['workspace'],
+        "plugin_dir":    PLUGIN_DIR,
+        "plugin_count":  plugin_count,
+    })
 
 
 # ── Execution route ────────────────────────────────────────────────────────
@@ -644,15 +733,13 @@ def execute_scripts():
                 "error":        f"Plugin '{key}' has unsatisfied dependencies.",
                 "missing_deps": info["missing_deps"],
             }), 400
-        active_steps.append((key, info["func"], info["meta"]))
+        active_steps.append((key, info["funcs"], info["meta"]))
 
     try:
         payload  = payload_from_file(target_path)
         step_log = []
 
-        for key, fn, meta in active_steps:
-            # MIME compatibility — warn in log but don't block (plugins may accept
-            # broader or narrower type sets than their metadata declares)
+        for key, funcs, meta in active_steps:
             accepted = meta.get("accepts", [])
             if accepted and payload.mime_type not in accepted:
                 step_log.append({
@@ -663,14 +750,15 @@ def execute_scripts():
                     ),
                 })
 
-            try:
-                payload = fn(payload)
-            except Exception as e:
-                return jsonify({
-                    "error":     f"Step '{key}' raised an exception: {e}",
-                    "trace":     traceback.format_exc(),
-                    "completed": [s["step"] for s in step_log if "warning" not in s],
-                }), 500
+            for fn in funcs:
+                try:
+                    payload = fn(payload)
+                except Exception as e:
+                    return jsonify({
+                        "error":     f"Step '{key}' → '{fn.__name__}' raised an exception: {e}",
+                        "trace":     traceback.format_exc(),
+                        "completed": [s["step"] for s in step_log if "warning" not in s],
+                    }), 500
 
             step_log.append({"step": key, "status": "ok"})
 
@@ -760,7 +848,10 @@ def generate_plugin():
         messages   = [{"role": "user", "content": description}],
     )
 
-    code = message.content[0].text.strip()
+    block = next((b for b in message.content if isinstance(b, ant.types.TextBlock)), None)
+    if block is None:
+        return jsonify({"error": "No text in API response"}), 500
+    code = block.text.strip()
     # Strip accidental markdown fences
     if code.startswith('```'):
         lines = code.splitlines()
@@ -784,6 +875,35 @@ def save_plugin():
     with open(dest, 'w') as f:
         f.write(code)
     return jsonify({"status": "ok", "filename": filename})
+
+
+@app.route('/download_batch', methods=['GET'])
+def download_batch():
+    session_dir = os.path.basename(request.args.get('session_dir', '').strip())
+    if not session_dir:
+        return jsonify({"error": "Missing session_dir"}), 400
+    session_path = os.path.join(get_config()['workspace'], session_dir)
+    if not os.path.isdir(session_path):
+        return jsonify({"error": "Session not found"}), 404
+    try:
+        with open(os.path.join(session_path, 'session.json')) as f:
+            meta = json.load(f)
+        files = meta.get('files', [])
+    except Exception:
+        files = []
+    if not files:
+        return jsonify({"error": "No files in session"}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for fname in files:
+            fpath = os.path.join(session_path, fname)
+            if os.path.isfile(fpath):
+                zf.write(fpath, fname)
+    buf.seek(0)
+    zip_name = f"{session_dir}_output.zip"
+    return send_file(buf, as_attachment=True, download_name=zip_name,
+                     mimetype='application/zip')
 
 
 if __name__ == '__main__':
