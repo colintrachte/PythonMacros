@@ -378,6 +378,21 @@ def plugin_editor():
     return render_template("plugin_editor.html")
 
 
+@app.route('/help')
+def help_page():
+    return render_template("help.html")
+
+
+@app.route('/readme')
+def readme():
+    path = os.path.join(BASE_DIR, 'README.md')
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    except FileNotFoundError:
+        return '# README not found', 404, {'Content-Type': 'text/plain; charset=utf-8'}
+
+
 @app.route('/get_workspace', methods=['GET'])
 def get_workspace_route():
     return jsonify(get_config())
@@ -682,7 +697,7 @@ def get_plugin_source():
     if not os.path.exists(path):
         return jsonify({"error": "File not found"}), 404
     try:
-        with open(path, 'r', errors='replace') as f:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
             return jsonify({"code": f.read(), "filename": filename})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -959,7 +974,7 @@ def save_plugin():
     if not filename.endswith('.py'):
         filename += '.py'
     dest = os.path.join(PLUGIN_DIR, filename)
-    with open(dest, 'w') as f:
+    with open(dest, 'w', encoding='utf-8') as f:
         f.write(code)
     return jsonify({"status": "ok", "filename": filename})
 

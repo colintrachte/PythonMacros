@@ -15,7 +15,11 @@
         "pluginKey": "laser_utils.inject_laser_power_on_z_moves",
         "description": "Inject laser on/off at G1 Z0.00 / G0 Z1.00 transitions",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "power": 0.4,
+            "engrave_z": 0,
+            "travel_z": 1
+        }
     },
     {
         "pluginKey": "laser_utils.add_laser_header_footer",

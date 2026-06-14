@@ -374,16 +374,36 @@ def my_step(lines):
     const statusEl    = document.getElementById('statusPill');
     const titleEl     = document.getElementById('editorTitle');
 
+    function scrollToFunction(fnName) {
+        const code  = editor.value;
+        const regex = new RegExp(`^def ${fnName}\\s*\\(`, 'm');
+        const match = regex.exec(code);
+        if (!match) return;
+        // Move caret to the def line so the browser scrolls it into view
+        editor.focus();
+        editor.selectionStart = editor.selectionEnd = match.index;
+        // Manually compute scroll position: count newlines before match
+        const linesBefore = code.slice(0, match.index).split('\n').length - 1;
+        const lineHeight  = parseFloat(getComputedStyle(editor).lineHeight) || 21;
+        editor.scrollTop  = Math.max(0, (linesBefore - 3) * lineHeight);
+    }
+
     // Load existing plugin or leave blank for new
     const params   = new URLSearchParams(location.search);
     const editFile = params.get('file');
+    const editFn   = params.get('fn');
 
     if (editFile) {
-        titleEl.textContent    = `Edit: ${editFile}`;
-        filenameEl.value       = editFile;
+        titleEl.textContent = editFn ? `Edit: ${editFile} → ${editFn}` : `Edit: ${editFile}`;
+        filenameEl.value    = editFile;
         fetch(`${API_BASE}/get_plugin_source?file=${encodeURIComponent(editFile)}`)
             .then(r => r.json())
-            .then(d => { if (d.code !== undefined) editor.value = d.code; })
+            .then(d => {
+                if (d.code !== undefined) {
+                    editor.value = d.code;
+                    if (editFn) scrollToFunction(editFn);
+                }
+            })
             .catch(() => {});
     }
 

@@ -60,7 +60,7 @@ header {
 
 .logo {
     font-family:    var(--mono);
-    font-size:      15px;
+    font-size:      17px;
     font-weight:    700;
     letter-spacing: 0.08em;
     color:          var(--text-primary);
@@ -97,6 +97,30 @@ header {
 .workspace-pill svg   { color: var(--text-dim); flex-shrink: 0; transition: color var(--transition); }
 .workspace-pill:hover svg { color: var(--text-secondary); }
 
+/* ── Help button (in header) ─────────────────────────────────── */
+
+.help-btn {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    width:           38px;
+    height:          38px;
+    border-radius:   6px;
+    border:          1px solid transparent;
+    background:      transparent;
+    color:           var(--text-dim);
+    cursor:          pointer;
+    text-decoration: none;
+    margin-left:     8px;
+    transition:      all var(--transition);
+    font-family:     var(--sans);
+    font-size:       20px;
+    font-weight:     600;
+    line-height:     1;
+    padding-bottom:  2px; /* optical center for "?" glyph */
+}
+.help-btn:hover { background: var(--surface-2); border-color: var(--border); color: var(--text-primary); }
+
 /* ── Settings anchor (in header) ─────────────────────────────── */
 
 .settings-wrap {
@@ -108,8 +132,8 @@ header {
     display:      flex;
     align-items:  center;
     justify-content: center;
-    width:        32px;
-    height:       32px;
+    width:        38px;
+    height:       38px;
     border-radius:6px;
     border:       1px solid transparent;
     background:   transparent;
@@ -341,14 +365,14 @@ header {
 .run-btn {
     display:        flex;
     align-items:    center;
-    gap:            7px;
-    padding:        7px 16px;
+    gap:            8px;
+    padding:        10px 22px;
     background:     var(--success);
     color:          #fff;
     border:         none;
     border-radius:  6px;
     font-family:    var(--sans);
-    font-size:      13px;
+    font-size:      15px;
     font-weight:    700;
     cursor:         pointer;
     transition:     all var(--transition);
@@ -660,6 +684,23 @@ main { flex-grow: 1; padding: 32px 24px; }
 }
 .step-note::placeholder { color: var(--text-dim); }
 .step-note:focus        { color: var(--text-primary); }
+
+.step-edit-btn {
+    display:      flex;
+    align-items:  center;
+    justify-content: center;
+    width:        28px;
+    height:       28px;
+    border-radius:5px;
+    border:       1px solid transparent;
+    background:   transparent;
+    color:        var(--text-dim);
+    cursor:       pointer;
+    transition:   all var(--transition);
+    flex-shrink:  0;
+    margin-top:   1px;
+}
+.step-edit-btn:hover { background: var(--accent-dim); border-color: rgba(77,148,255,0.3); color: var(--accent); }
 
 .step-delete {
     display:      flex;
@@ -1006,8 +1047,8 @@ main { flex-grow: 1; padding: 32px 24px; }
 .choose-plugins-btn {
     display:     flex;
     align-items: center;
-    gap:         7px;
-    padding:     6px 12px;
+    gap:         8px;
+    padding:     8px 14px;
     border-radius: 6px;
     cursor:      pointer;
     transition:  background var(--transition), border-color var(--transition);
@@ -1015,7 +1056,7 @@ main { flex-grow: 1; padding: 32px 24px; }
     background:  transparent;
     color:       var(--text-secondary);
     font-family: var(--sans);
-    font-size:   13px;
+    font-size:   14px;
     font-weight: 500;
     white-space: nowrap;
 }
