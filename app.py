@@ -663,6 +663,158 @@ def preset_event():
     return jsonify({"status": "ok"})
 
 
+# ── File-content history ──────────────────────────────────────────────────
+# Stores raw byte snapshots of a file before each /execute run.
+# Keyed by "session_dir/filename".  Pure in-memory; lost on server restart.
+
+_file_histories: dict = {}
+_file_hist_lock = threading.Lock()
+
+
+def _fh_key(session_dir, filename):
+    return f"{session_dir}/{filename}"
+
+
+def _fh_get(key):
+    if key not in _file_histories:
+        _file_histories[key] = {"past": [], "future": [], "hit_limit": False}
+    return _file_histories[key]
+
+
+def _fh_limit():
+    return max(1, int(get_config().get("file_undo_limit", 10)))
+
+
+def fh_push_snapshot(session_dir, filename, path):
+    """Snapshot the current file contents before overwriting it."""
+    try:
+        with open(path, "rb") as f:
+            snapshot = f.read()
+    except OSError:
+        return
+    key = _fh_key(session_dir, filename)
+    limit = _fh_limit()
+    with _file_hist_lock:
+        fh = _fh_get(key)
+        fh["past"].append(snapshot)
+        fh["future"].clear()
+        if len(fh["past"]) > limit:
+            fh["past"].pop(0)
+            fh["hit_limit"] = True
+
+
+def fh_undo(session_dir, filename, path):
+    key = _fh_key(session_dir, filename)
+    with _file_hist_lock:
+        fh = _fh_get(key)
+        if not fh["past"]:
+            return False
+        try:
+            with open(path, "rb") as f:
+                current = f.read()
+        except OSError:
+            return False
+        prev = fh["past"].pop()
+        fh["future"].append(current)
+    with open(path, "wb") as f:
+        f.write(prev)
+    return True
+
+
+def fh_redo(session_dir, filename, path):
+    key = _fh_key(session_dir, filename)
+    with _file_hist_lock:
+        fh = _fh_get(key)
+        if not fh["future"]:
+            return False
+        try:
+            with open(path, "rb") as f:
+                current = f.read()
+        except OSError:
+            return False
+        nxt = fh["future"].pop()
+        fh["past"].append(current)
+    with open(path, "wb") as f:
+        f.write(nxt)
+    return True
+
+
+def fh_reset(session_dir):
+    with _file_hist_lock:
+        keys = [k for k in _file_histories if k.startswith(f"{session_dir}/")]
+        for k in keys:
+            del _file_histories[k]
+
+
+def fh_status(session_dir, filename):
+    key = _fh_key(session_dir, filename)
+    with _file_hist_lock:
+        fh = _fh_get(key)
+        return {
+            "can_undo":  len(fh["past"]) > 0,
+            "can_redo":  len(fh["future"]) > 0,
+            "hit_limit": fh["hit_limit"],
+        }
+
+
+@app.route('/file_history/status', methods=['GET'])
+def file_history_status():
+    session_dir = os.path.basename(request.args.get('session_dir', ''))
+    filename    = request.args.get('filename', '')
+    if not session_dir or not filename:
+        return jsonify({"can_undo": False, "can_redo": False, "hit_limit": False})
+    return jsonify(fh_status(session_dir, filename))
+
+
+@app.route('/file_history/undo', methods=['POST'])
+def file_history_undo():
+    data        = request.json or {}
+    session_dir = os.path.basename(data.get('session_dir', ''))
+    filename    = data.get('filename', '')
+    workspace   = get_config()['workspace']
+    path        = os.path.join(workspace, session_dir, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+    if fh_undo(session_dir, filename, path):
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Nothing to undo"}), 400
+
+
+@app.route('/file_history/redo', methods=['POST'])
+def file_history_redo():
+    data        = request.json or {}
+    session_dir = os.path.basename(data.get('session_dir', ''))
+    filename    = data.get('filename', '')
+    workspace   = get_config()['workspace']
+    path        = os.path.join(workspace, session_dir, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+    if fh_redo(session_dir, filename, path):
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Nothing to redo"}), 400
+
+
+@app.route('/file_history/reset', methods=['POST'])
+def file_history_reset():
+    session_dir = os.path.basename((request.json or {}).get('session_dir', ''))
+    if session_dir:
+        fh_reset(session_dir)
+    return jsonify({"status": "ok"})
+
+
+@app.route('/set_file_undo_limit', methods=['POST'])
+def set_file_undo_limit():
+    try:
+        limit = max(1, int((request.json or {}).get('limit', 10)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid limit"}), 400
+    config = get_config()
+    config['file_undo_limit'] = limit
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+    return jsonify({"status": "ok", "limit": limit})
+
+
 # ── History routes ─────────────────────────────────────────────────────────
 
 def read_history_meta():
@@ -835,17 +987,59 @@ def list_functions():
     return jsonify(result)
 
 
+@app.route('/preview_file', methods=['GET'])
+def preview_file():
+    """Return file contents for the in-app preview panel (text) or metadata (binary)."""
+    session_dir = os.path.basename(request.args.get('session_dir', ''))
+    filename    = request.args.get('filename', '')
+    workspace   = get_config()['workspace']
+    path        = os.path.join(workspace, session_dir, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+
+    mime, _ = mimetypes.guess_type(path)
+    mime = mime or "application/octet-stream"
+    is_text = (
+        mime.startswith("text/")
+        or mime in ("application/json", "application/xml", "application/javascript")
+    )
+
+    MAX_LINES = 2000
+    if is_text:
+        try:
+            with open(path, "r", errors="replace") as f:
+                lines = f.readlines()
+            truncated = len(lines) > MAX_LINES
+            return jsonify({
+                "type":        "text",
+                "content":     "".join(lines[:MAX_LINES]),
+                "total_lines": len(lines),
+                "truncated":   truncated,
+                "mime_type":   mime,
+            })
+        except OSError as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        return jsonify({
+            "type":      "binary",
+            "mime_type": mime,
+            "size":      os.path.getsize(path),
+        })
+
+
 @app.route('/settings_info', methods=['GET'])
 def settings_info():
     plugin_count = len([
         f for f in os.listdir(PLUGIN_DIR)
         if f.endswith('.py') and f != '__init__.py'
     ]) if os.path.exists(PLUGIN_DIR) else 0
+    cfg = get_config()
     return jsonify({
-        "api_key_set":   bool(os.environ.get('ANTHROPIC_API_KEY')),
-        "workspace":     get_config()['workspace'],
-        "plugin_dir":    PLUGIN_DIR,
-        "plugin_count":  plugin_count,
+        "api_key_set":     bool(os.environ.get('ANTHROPIC_API_KEY')),
+        "workspace":       cfg['workspace'],
+        "plugin_dir":      PLUGIN_DIR,
+        "plugin_count":    plugin_count,
+        "file_undo_limit": int(cfg.get('file_undo_limit', 10)),
     })
 
 
@@ -929,6 +1123,7 @@ def execute_scripts():
 
             step_log.append({"step": key, "status": "ok"})
 
+        fh_push_snapshot(session_dir, filename, target_path)
         payload_to_file(payload, target_path)
 
         return jsonify({

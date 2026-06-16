@@ -163,15 +163,17 @@ def _shift_body(body, dx, dy):
     return shifted
 
 
-def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0):
+def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0):
     """
     Tile the laser artwork in a grid to fill the PCB and bake shifted coordinates
     into one file.
 
     Run this step AFTER add_laser_header_footer and inject_laser_power_on_z_moves.
     Auto-detects artwork extents from G0/G1 X/Y values in the body, computes
-    cols = floor(pcb_width / (art_width + gap)) and the same for rows, then
-    duplicates the body for each cell with coordinates shifted by col/row offsets.
+    cols = floor(abs(pcb_width) / (art_width + gap)) and the same for rows.
+    The sign of pcb_width/pcb_height controls the tiling direction (negative = tile
+    toward lower coordinates).
+    max_copies: if > 0, caps the total number of tiles produced (0 = unlimited).
     """
     # Locate header end (line after GRAB_LASER)
     header_end = 0
@@ -208,15 +210,25 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0):
 
     art_w = max(x_vals) - min(x_vals)
     art_h = max(y_vals) - min(y_vals)
-    cols = max(1, int(pcb_width  / (art_w + gap)))
-    rows = max(1, int(pcb_height / (art_h + gap)))
+
+    # Use abs() for count, sign for direction
+    dir_x = -1.0 if pcb_width < 0 else 1.0
+    dir_y = -1.0 if pcb_height < 0 else 1.0
+    cols = max(1, int(abs(pcb_width)  / (art_w + gap)))
+    rows = max(1, int(abs(pcb_height) / (art_h + gap)))
 
     new_body = []
+    total = 0
     for row in range(rows):
         for col in range(cols):
-            dx = col * (art_w + gap)
-            dy = row * (art_h + gap)
-            new_body.extend(body if (dx == 0 and dy == 0) else _shift_body(body, dx, dy))
+            if max_copies > 0 and total >= max_copies:
+                break
+            dx = col * (art_w + gap) * dir_x
+            dy = row * (art_h + gap) * dir_y
+            new_body.extend(body if (dx == 0.0 and dy == 0.0) else _shift_body(body, dx, dy))
+            total += 1
+        if max_copies > 0 and total >= max_copies:
+            break
 
     return header + new_body + footer
 
@@ -224,6 +236,8 @@ make_laser_grid.plugin_meta = {
     "label":       "Tile grid — fill PCB",
     "description": (
         "Duplicates the laser body in a grid that fills the PCB. "
+        "Negative pcb_width/pcb_height tiles toward lower coordinates. "
+        "max_copies caps total tiles (0 = unlimited). "
         "Coordinates are baked in; no Klipper macro changes needed. "
         "Run after 'Add laser header + footer' and 'Inject laser power on Z transitions'."
     ),

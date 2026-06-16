@@ -88,6 +88,7 @@
             font-family: var(--sans);
             font-size:   12px;
             font-weight: 500;
+            cursor:      pointer;
             text-decoration: none;
             transition:  all var(--transition);
             white-space: nowrap;
@@ -176,9 +177,10 @@
 
         /* Reference pane */
         .pe-ref {
-            width:         300px;
+            width:         30%;
+            min-width:     160px;
+            max-width:     60%;
             flex-shrink:   0;
-            border-right:  1px solid var(--border);
             display:       flex;
             flex-direction:column;
             overflow:      hidden;
@@ -220,6 +222,27 @@
             scrollbar-color: var(--border) transparent;
             user-select: text;
         }
+
+        /* Split handle between ref and editor */
+        .pe-split-handle {
+            width:       5px;
+            background:  var(--border-subtle);
+            cursor:      col-resize;
+            flex-shrink: 0;
+            transition:  background var(--transition);
+            position:    relative;
+        }
+        .pe-split-handle::after {
+            content:      '';
+            position:     absolute;
+            top:          50%; left: 50%;
+            transform:    translate(-50%, -50%);
+            width:        3px; height: 36px;
+            background:   var(--border);
+            border-radius:2px;
+        }
+        .pe-split-handle:hover,
+        .pe-split-handle:hover::after { background: var(--accent); }
 
         /* Editor pane */
         .pe-editor-pane {
@@ -266,6 +289,35 @@
             padding:      1px 4px;
             color:        var(--text-secondary);
         }
+
+        /* ── Clipboard toast ──────────────────────────────────── */
+
+        .pe-toast {
+            position:     fixed;
+            bottom:       24px;
+            right:        24px;
+            background:   var(--surface);
+            border:       1px solid var(--border);
+            border-radius:8px;
+            padding:      10px 18px;
+            font-family:  var(--sans);
+            font-size:    13px;
+            font-weight:  500;
+            color:        var(--success);
+            box-shadow:   var(--shadow-lg);
+            z-index:      9999;
+            display:      flex;
+            align-items:  center;
+            gap:          8px;
+            opacity:      0;
+            transform:    translateY(8px);
+            transition:   opacity 0.18s ease, transform 0.18s ease;
+            pointer-events: none;
+        }
+        .pe-toast.show {
+            opacity:   1;
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -286,12 +338,12 @@
     <!-- ── AI links ────────────────────────────────────────────── -->
     <div class="ai-bar">
         <span class="ai-bar-label">Ask AI</span>
-        <a class="ai-link" href="https://claude.ai"          target="_blank" rel="noopener">Claude</a>
-        <a class="ai-link" href="https://chatgpt.com"        target="_blank" rel="noopener">ChatGPT</a>
-        <a class="ai-link" href="https://gemini.google.com"  target="_blank" rel="noopener">Gemini</a>
-        <a class="ai-link" href="https://perplexity.ai"      target="_blank" rel="noopener">Perplexity</a>
-        <a class="ai-link" href="https://grok.com"           target="_blank" rel="noopener">Grok</a>
-        <a class="ai-link" href="https://chat.mistral.ai"    target="_blank" rel="noopener">Mistral</a>
+        <button class="ai-link" data-url="https://claude.ai">Claude</button>
+        <button class="ai-link" data-url="https://chatgpt.com">ChatGPT</button>
+        <button class="ai-link" data-url="https://gemini.google.com">Gemini</button>
+        <button class="ai-link" data-url="https://perplexity.ai">Perplexity</button>
+        <button class="ai-link" data-url="https://grok.com">Grok</button>
+        <button class="ai-link" data-url="https://chat.mistral.ai">Mistral</button>
     </div>
 
     <!-- ── Toolbar ─────────────────────────────────────────────── -->
@@ -308,16 +360,19 @@
     </div>
 
     <!-- ── Main ────────────────────────────────────────────────── -->
-    <div class="pe-main">
+    <div class="pe-main" id="peMain">
 
         <!-- Left: reference / template -->
-        <div class="pe-ref">
+        <div class="pe-ref" id="peRef">
             <div class="pe-ref-header">
                 <div class="pe-ref-title">Plugin Template</div>
-                <div class="pe-ref-hint">Copy this into any AI chat, describe what you want, then paste the result in the editor.</div>
+                <div class="pe-ref-hint">Click an AI button above to copy this template to clipboard, then paste it into the chat.</div>
             </div>
             <div class="pe-ref-code" id="refCode"></div>
         </div>
+
+        <!-- Drag handle -->
+        <div class="pe-split-handle" id="peSplitHandle"></div>
 
         <!-- Right: editor -->
         <div class="pe-editor-pane">
@@ -329,6 +384,14 @@
             </div>
         </div>
 
+    </div>
+
+    <!-- Clipboard toast -->
+    <div class="pe-toast" id="peToast">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        <span id="peToastMsg">Copied to clipboard</span>
     </div>
 
     <script>
@@ -373,22 +436,69 @@ def my_step(lines):
     const saveBtn     = document.getElementById('saveBtn');
     const statusEl    = document.getElementById('statusPill');
     const titleEl     = document.getElementById('editorTitle');
+    const toastEl     = document.getElementById('peToast');
+    const toastMsgEl  = document.getElementById('peToastMsg');
+
+    // ── Clipboard toast ────────────────────────────────────────────────────
+
+    let toastTimer = null;
+    function showToast(msg = 'Copied to clipboard') {
+        toastMsgEl.textContent = msg;
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+    }
+
+    // ── AI buttons → copy code then open ──────────────────────────────────
+
+    document.querySelectorAll('.ai-link[data-url]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const text = editor.value.trim() || TEMPLATE;
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast(editor.value.trim() ? 'Plugin code copied to clipboard' : 'Template copied to clipboard');
+            } catch (_) {
+                showToast('Could not copy — open clipboard manually');
+            }
+            window.open(btn.dataset.url, '_blank', 'noopener');
+        });
+    });
+
+    // ── Split-pane drag ────────────────────────────────────────────────────
+
+    const peMain   = document.getElementById('peMain');
+    const peRef    = document.getElementById('peRef');
+    const peHandle = document.getElementById('peSplitHandle');
+
+    peHandle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const onMove = ev => {
+            const rect = peMain.getBoundingClientRect();
+            const pct  = Math.max(15, Math.min(60,
+                (ev.clientX - rect.left) / rect.width * 100));
+            peRef.style.width = `${pct}%`;
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', () =>
+            document.removeEventListener('mousemove', onMove), { once: true });
+    });
+
+    // ── Scroll editor to function ──────────────────────────────────────────
 
     function scrollToFunction(fnName) {
         const code  = editor.value;
         const regex = new RegExp(`^def ${fnName}\\s*\\(`, 'm');
         const match = regex.exec(code);
         if (!match) return;
-        // Move caret to the def line so the browser scrolls it into view
         editor.focus();
         editor.selectionStart = editor.selectionEnd = match.index;
-        // Manually compute scroll position: count newlines before match
         const linesBefore = code.slice(0, match.index).split('\n').length - 1;
         const lineHeight  = parseFloat(getComputedStyle(editor).lineHeight) || 21;
         editor.scrollTop  = Math.max(0, (linesBefore - 3) * lineHeight);
     }
 
-    // Load existing plugin or leave blank for new
+    // ── Load existing plugin or leave blank ───────────────────────────────
+
     const params   = new URLSearchParams(location.search);
     const editFile = params.get('file');
     const editFn   = params.get('fn');
@@ -407,11 +517,15 @@ def my_step(lines):
             .catch(() => {});
     }
 
+    // ── Status pill ────────────────────────────────────────────────────────
+
     function showStatus(msg, type) {
         statusEl.textContent = msg;
         statusEl.className   = `pe-status ${type}`;
         if (type === 'ok') setTimeout(() => { statusEl.className = 'pe-status'; }, 3000);
     }
+
+    // ── Save ───────────────────────────────────────────────────────────────
 
     async function save() {
         let fn = filenameEl.value.trim();

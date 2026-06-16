@@ -15,6 +15,7 @@
             <div class="logo">PY<span>·</span>AUTOMATE</div>
 
             <!-- Choose Plugins anchor -->
+            <!-- DO NOT MODIFY: puzzle icon SVG path and button structure must remain exactly as-is -->
             <div class="choose-plugins-wrap" id="choosePluginsWrap">
                 <button class="choose-plugins-btn" id="choosePluginsBtn"
                         title="Choose which plugins are active in this session">
@@ -89,97 +90,8 @@
         </div>
     </header>
 
-    <!-- ── Toolbar strip ───────────────────────────────────────────── -->
-    <div class="toolbar-strip">
-        <!-- History -->
-        <button class="tb-btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
-            </svg>
-            Undo
-        </button>
-        <button class="tb-btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled>
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                 style="transform:scaleX(-1)">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
-            </svg>
-            Redo
-        </button>
-
-        <div class="tb-section-divider"></div>
-
-        <!-- Import (file/folder picker) -->
-        <div class="import-wrap" id="importWrap">
-            <button class="tb-btn import-btn" id="importBtn" title="Import files or a folder">
-                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                </svg>
-                Import
-                <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                </svg>
-            </button>
-            <div class="import-dropdown" id="importDropdown">
-                <button class="import-option" id="importFilesOpt">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    Files
-                </button>
-                <button class="import-option" id="importFolderOpt">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
-                    </svg>
-                    Folder
-                </button>
-            </div>
-            <input type="file" id="filePicker" multiple style="display:none">
-            <input type="file" id="folderPicker" webkitdirectory multiple style="display:none">
-        </div>
-        <span class="tb-file-display" id="fileDisplay"></span>
-
-        <div class="tb-section-divider"></div>
-
-        <!-- Export dropdown -->
-        <div class="import-wrap" id="exportWrap">
-            <button class="tb-btn import-btn" id="exportBtn" title="Export output (Ctrl+S)" disabled>
-                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                </svg>
-                Export
-                <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                </svg>
-            </button>
-            <div class="import-dropdown" id="exportDropdown">
-                <button class="import-option" id="exportSaveOpt">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Save
-                </button>
-                <button class="import-option" id="exportSaveAsOpt">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4M12 4v8"/>
-                    </svg>
-                    Save As…
-                </button>
-            </div>
-        </div>
-        <span class="output-filename" id="outputFilename"></span>
-    </div>
-
     <!-- ── Batch strip ───────────────────────────────────────────────── -->
     <div class="batch-strip" id="batchStrip" style="display:none">
-        <!-- Large-batch warning -->
         <div class="batch-warn" id="batchWarn" style="display:none">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--warning)">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -190,7 +102,6 @@
             <button class="tb-btn tb-btn-xs" id="batchWarnCancel">Cancel</button>
             <button class="batch-continue-btn" id="batchWarnContinue">Continue Upload</button>
         </div>
-        <!-- Upload progress -->
         <div class="batch-progress" id="batchProgress" style="display:none">
             <span id="batchProgressText">Uploading…</span>
             <div class="upload-bar"><div class="upload-bar-fill" id="uploadBarFill" style="width:0%"></div></div>
@@ -199,37 +110,168 @@
         </div>
     </div>
 
-    <!-- ── Main ────────────────────────────────────────────────────── -->
-    <main>
-        <div class="main-inner">
-            <div class="section-header">
-                <span class="section-title">Processing Steps</span>
-                <div class="preset-bar">
-                    <span class="preset-bar-label">Workflow</span>
-                    <button class="tb-btn tb-btn-xs" id="presetLibraryBtn" title="Browse saved workflows">
+    <!-- ── Split container ───────────────────────────────────────────── -->
+    <div class="split-container" id="splitContainer">
+
+        <!-- ── Left pane: File ──────────────────────────────────────── -->
+        <div class="split-pane split-left" id="splitLeft">
+            <div class="pane-header">
+                <span class="pane-label">File</span>
+
+                <!-- Import -->
+                <div class="import-wrap" id="importWrap">
+                    <button class="tb-btn import-btn" id="importBtn" title="Import files or a folder">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Import
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div class="import-dropdown" id="importDropdown">
+                        <button class="import-option" id="importFilesOpt">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Files
+                        </button>
+                        <button class="import-option" id="importFolderOpt">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                            </svg>
+                            Folder
+                        </button>
+                    </div>
+                    <input type="file" id="filePicker" multiple style="display:none">
+                    <input type="file" id="folderPicker" webkitdirectory multiple style="display:none">
+                </div>
+                <span class="tb-file-display" id="fileDisplay"></span>
+
+                <div style="flex:1"></div>
+
+                <!-- File undo/redo -->
+                <button class="tb-btn" id="fileUndoBtn" title="Undo file change" disabled>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+                    </svg>
+                    Undo
+                </button>
+                <button class="tb-btn" id="fileRedoBtn" title="Redo file change" disabled>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                         style="transform:scaleX(-1)">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+                    </svg>
+                    Redo
+                </button>
+
+                <div class="tb-section-divider"></div>
+
+                <!-- Export -->
+                <div class="import-wrap" id="exportWrap">
+                    <button class="tb-btn import-btn" id="exportBtn" title="Export output (Ctrl+S)" disabled>
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        Export
+                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div class="import-dropdown" id="exportDropdown">
+                        <button class="import-option" id="exportSaveOpt">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Save
+                        </button>
+                        <button class="import-option" id="exportSaveAsOpt">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4M12 4v8"/>
+                            </svg>
+                            Save As…
+                        </button>
+                    </div>
+                </div>
+                <span class="output-filename" id="outputFilename"></span>
+            </div>
+
+            <!-- File preview content -->
+            <div class="pane-content" id="filePaneContent">
+                <div class="file-preview-empty" id="filePreviewEmpty">
+                    <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" opacity="0.25">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <div>Import a file to preview its contents</div>
+                </div>
+                <pre class="file-preview" id="filePreview" style="display:none"></pre>
+                <div class="file-preview-truncation" id="filePreviewTruncation" style="display:none"></div>
+            </div>
+        </div>
+
+        <!-- Vertical drag handle -->
+        <div class="split-handle" id="splitHandle"></div>
+
+        <!-- ── Right pane: Workflow ──────────────────────────────────── -->
+        <div class="split-pane split-right" id="splitRight">
+            <div class="pane-header">
+                <span class="pane-label">Workflow</span>
+
+                <!-- Workflow undo/redo -->
+                <button class="tb-btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+                    </svg>
+                    Undo
+                </button>
+                <button class="tb-btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                         style="transform:scaleX(-1)">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 10h10a8 8 0 018 8v2M3 10l5 5m-5-5l5-5"/>
+                    </svg>
+                    Redo
+                </button>
+
+                <div style="flex:1"></div>
+
+                <!-- Preset bar -->
+                <div class="preset-bar">
+                    <span class="preset-bar-label">Preset</span>
+                    <button class="tb-btn" id="presetLibraryBtn" title="Browse saved workflows">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
                         </svg>
                         Library
                     </button>
                     <div class="btn-divider"></div>
-                    <button class="tb-btn tb-btn-xs" id="savePresetBtn" title="Save this pipeline as a workflow (Ctrl+P)">
-                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button class="tb-btn" id="savePresetBtn" title="Save this pipeline as a workflow (Ctrl+P)">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
                         </svg>
                         Save
                     </button>
-                    <button class="tb-btn tb-btn-xs" id="savePresetAsBtn" title="Save pipeline as a new workflow name">
-                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button class="tb-btn" id="savePresetAsBtn" title="Save pipeline as a new workflow name">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                         </svg>
                         Save As
                     </button>
-                    <button class="tb-btn tb-btn-xs" id="loadPresetBtn" title="Load a saved workflow">
-                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button class="tb-btn" id="loadPresetBtn" title="Load a saved workflow">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                         </svg>
@@ -244,36 +286,45 @@
                     <span class="preset-filename" id="presetFilename">unsaved</span>
                 </div>
             </div>
-            <div class="section-hint" style="margin-bottom:12px">Drag to reorder · uncheck to skip</div>
 
-            <ul id="scriptList"></ul>
+            <!-- Workflow content (pannable canvas) -->
+            <div class="pane-content workflow-viewport" id="workflowPaneContent">
+                <div class="canvas-surface" id="workflowCanvas">
+                <div class="workflow-inner">
+                    <div class="section-hint">Drag to reorder · uncheck to skip</div>
 
-            <div id="emptyState" class="empty-state">
-                <div class="empty-state-icon">⬡</div>
-                No steps yet. Add a plugin below to begin.
-            </div>
+                    <ul id="scriptList"></ul>
 
-            <!-- Add step + inline plugin dropdown -->
-            <div class="add-step-wrap">
-                <button id="add-global-step">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 4v16m8-8H4"/>
-                    </svg>
-                    <span id="addStepLabel">Add Processing Step</span>
-                </button>
-
-                <div class="plugin-dropdown" id="pluginDropdown">
-                    <div class="plugin-search-wrap">
-                        <input class="plugin-search" id="pluginSearch" type="text"
-                               placeholder="Search plugins…" autocomplete="off">
+                    <div id="emptyState" class="empty-state">
+                        <div class="empty-state-icon">⬡</div>
+                        No steps yet. Add a plugin below to begin.
                     </div>
-                    <div class="tag-bar" id="tagBar" style="display:none"></div>
-                    <ul class="plugin-list" id="pluginList"></ul>
+
+                    <!-- Add step + inline plugin dropdown -->
+                    <div class="add-step-wrap">
+                        <button id="add-global-step">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span id="addStepLabel">Add Processing Step</span>
+                        </button>
+
+                        <div class="plugin-dropdown" id="pluginDropdown">
+                            <div class="plugin-search-wrap">
+                                <input class="plugin-search" id="pluginSearch" type="text"
+                                       placeholder="Search plugins…" autocomplete="off">
+                            </div>
+                            <div class="tag-bar" id="tagBar" style="display:none"></div>
+                            <ul class="plugin-list" id="pluginList"></ul>
+                        </div>
+                    </div>
                 </div>
+                </div><!-- /.canvas-surface -->
             </div>
         </div>
-    </main>
+
+    </div><!-- /.split-container -->
 
     <!-- ── Preset Library Modal ────────────────────────────────────── -->
     <div class="modal-overlay" id="presetLibraryOverlay">
@@ -297,7 +348,6 @@
             <div class="modal-body" id="presetLibraryBody"></div>
         </div>
     </div>
-
 
     <!-- ── Rename Modal ────────────────────────────────────────────── -->
     <div class="modal-overlay" id="renameModal">

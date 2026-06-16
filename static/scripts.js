@@ -250,6 +250,200 @@ function updateEmptyState() {
     if (empty) el.playAll.disabled = true;
 }
 
+// ── Split-pane drag ────────────────────────────────────────────────────────
+
+function initSplitDrag() {
+    el.splitHandle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const onMove = ev => {
+            const rect = el.splitContainer.getBoundingClientRect();
+            const pct  = Math.max(15, Math.min(85,
+                (ev.clientX - rect.left) / rect.width * 100));
+            el.splitLeft.style.width = `${pct}%`;
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', () =>
+            document.removeEventListener('mousemove', onMove), { once: true });
+    });
+}
+
+// ── Workflow canvas pan ────────────────────────────────────────────────────
+
+let canvasDX = 0;
+let canvasDY = 0;
+
+function applyCanvasTransform() {
+    el.workflowCanvas.style.transform = `translate(${canvasDX}px, ${canvasDY}px)`;
+}
+
+function clampCanvasOffset(dx, dy) {
+    const vp       = el.workflowPaneContent;
+    const vpW      = vp.clientWidth;
+    // Subtract fixed console height so steps don't get buried under it
+    const consoleH = el.consoleToolbar ? el.consoleToolbar.offsetHeight : 110;
+    const vpH      = vp.clientHeight - consoleH;
+    const cW       = el.workflowCanvas.scrollWidth;
+    const cH       = el.workflowCanvas.scrollHeight;
+    const extraPad = Math.round(Math.min(vpW, vpH) * 0.5);
+
+    return {
+        dx: Math.max(vpW - cW - extraPad, Math.min(extraPad, dx)),
+        dy: Math.max(vpH - cH - extraPad, Math.min(extraPad, dy)),
+    };
+}
+
+function initCanvasPan() {
+    let panStartX, panStartY, panStartDX, panStartDY;
+
+    const noGo = e =>
+        e.target.closest('li')                  ||
+        e.target.closest('#add-global-step')    ||
+        e.target.closest('.plugin-dropdown')    ||
+        e.target.closest('.plugin-search-wrap') ||
+        e.button !== 0;
+
+    const onMove = e => {
+        const { dx, dy } = clampCanvasOffset(
+            panStartDX + (e.clientX - panStartX),
+            panStartDY + (e.clientY - panStartY),
+        );
+        canvasDX = dx;
+        canvasDY = dy;
+        applyCanvasTransform();
+    };
+
+    const onUp = () => {
+        el.workflowPaneContent.classList.remove('panning');
+        document.removeEventListener('mousemove', onMove);
+    };
+
+    el.workflowPaneContent.addEventListener('mousedown', e => {
+        if (noGo(e)) return;
+        e.preventDefault();
+        panStartX  = e.clientX;
+        panStartY  = e.clientY;
+        panStartDX = canvasDX;
+        panStartDY = canvasDY;
+        el.workflowPaneContent.classList.add('panning');
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp, { once: true });
+    });
+
+    // Re-clamp when the pane or window is resized
+    new ResizeObserver(() => {
+        const c = clampCanvasOffset(canvasDX, canvasDY);
+        if (c.dx !== canvasDX || c.dy !== canvasDY) {
+            canvasDX = c.dx; canvasDY = c.dy;
+            applyCanvasTransform();
+        }
+    }).observe(el.workflowPaneContent);
+}
+
+// ── File preview ───────────────────────────────────────────────────────────
+
+const PREVIEW_MAX_LINES = 2000;
+
+async function refreshFilePreview() {
+    if (!state.sessionDir || !state.outputFilename || state.isBatchSession) {
+        el.filePreview.style.display          = 'none';
+        el.filePreviewTruncation.style.display = 'none';
+        el.filePreviewEmpty.style.display     = '';
+        return;
+    }
+    try {
+        const r = await fetch(
+            `${API_BASE}/preview_file`
+            + `?session_dir=${encodeURIComponent(state.sessionDir)}`
+            + `&filename=${encodeURIComponent(state.outputFilename)}`
+        );
+        const d = await r.json();
+        if (d.error) { return; }
+
+        if (d.type === 'text') {
+            el.filePreview.textContent            = d.content;
+            el.filePreview.style.display          = '';
+            el.filePreviewEmpty.style.display     = 'none';
+            if (d.truncated) {
+                el.filePreviewTruncation.textContent  =
+                    `Showing first ${PREVIEW_MAX_LINES.toLocaleString()} of ${d.total_lines.toLocaleString()} lines`;
+                el.filePreviewTruncation.style.display = '';
+            } else {
+                el.filePreviewTruncation.style.display = 'none';
+            }
+        } else {
+            el.filePreview.textContent            = `[${d.mime_type}  ·  ${fmtBytes(d.size)}]`;
+            el.filePreview.style.display          = '';
+            el.filePreviewEmpty.style.display     = 'none';
+            el.filePreviewTruncation.style.display = 'none';
+        }
+    } catch (_) {}
+}
+
+// ── File-content history ───────────────────────────────────────────────────
+
+async function refreshFileUndoRedoButtons() {
+    const available = !state.isBatchSession && state.sessionDir && state.outputFilename;
+    if (!available) {
+        el.fileUndoBtn.disabled = true;
+        el.fileRedoBtn.disabled = true;
+        el.fileUndoBtn.classList.remove('at-limit');
+        return;
+    }
+    try {
+        const s = await (await fetch(
+            `${API_BASE}/file_history/status`
+            + `?session_dir=${encodeURIComponent(state.sessionDir)}`
+            + `&filename=${encodeURIComponent(state.outputFilename)}`
+        )).json();
+        el.fileUndoBtn.disabled = !s.can_undo;
+        el.fileRedoBtn.disabled = !s.can_redo;
+        const atLimit = !s.can_undo && s.hit_limit;
+        el.fileUndoBtn.classList.toggle('at-limit', atLimit);
+        el.fileUndoBtn.title = atLimit
+            ? 'History limit reached — oldest states were dropped'
+            : 'Undo file change';
+    } catch (_) {}
+}
+
+async function performFileUndo() {
+    if (!state.sessionDir || !state.outputFilename) return;
+    try {
+        const r = await fetch(`${API_BASE}/file_history/undo`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_dir: state.sessionDir, filename: state.outputFilename }),
+        });
+        if (!r.ok) { log('Nothing to undo.', 'warn'); return; }
+        await refreshFileUndoRedoButtons();
+        refreshFilePreview();
+        log('File undone.', 'info');
+    } catch (e) { log('File undo failed: ' + e.message, 'error'); }
+}
+
+async function performFileRedo() {
+    if (!state.sessionDir || !state.outputFilename) return;
+    try {
+        const r = await fetch(`${API_BASE}/file_history/redo`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_dir: state.sessionDir, filename: state.outputFilename }),
+        });
+        if (!r.ok) { log('Nothing to redo.', 'warn'); return; }
+        await refreshFileUndoRedoButtons();
+        refreshFilePreview();
+        log('File redone.', 'info');
+    } catch (e) { log('File redo failed: ' + e.message, 'error'); }
+}
+
+async function resetFileHistory() {
+    if (!state.sessionDir) return;
+    try {
+        await fetch(`${API_BASE}/file_history/reset`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_dir: state.sessionDir }),
+        });
+    } catch (_) {}
+    await refreshFileUndoRedoButtons();
+}
+
 // ── History / autosave ─────────────────────────────────────────────────────
 
 async function autosave() {
@@ -826,6 +1020,16 @@ async function openSettings() {
             <span class="settings-key">Status</span>
             ${apiStatus}
         </div>
+        <div class="settings-section">File History</div>
+        <div class="settings-row settings-edit-row">
+            <label class="settings-key" for="fileUndoLimitInput">Undo limit</label>
+            <input class="settings-input" id="fileUndoLimitInput" type="number"
+                   min="1" max="100" value="${d.file_undo_limit}" style="width:70px">
+            <button class="settings-save-btn" id="fileUndoLimitSaveBtn">Save</button>
+        </div>
+        <div class="settings-row">
+            <span class="settings-meta">Max file snapshots kept in memory per file. Older states are dropped when the limit is reached.</span>
+        </div>
         <div class="settings-section">Plugins</div>
         <div class="settings-row">
             <code class="settings-val">${d.plugin_dir}</code>
@@ -879,6 +1083,23 @@ async function openSettings() {
     };
     apiSaveBtn.addEventListener('click', saveApiKey);
     apiInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveApiKey(); });
+
+    // File undo limit
+    const fileUndoLimitInput   = document.getElementById('fileUndoLimitInput');
+    const fileUndoLimitSaveBtn = document.getElementById('fileUndoLimitSaveBtn');
+    const saveFileUndoLimit = async () => {
+        const limit = parseInt(fileUndoLimitInput.value, 10);
+        if (!limit || limit < 1) return;
+        try {
+            const r = await fetch(`${API_BASE}/set_file_undo_limit`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit }),
+            });
+            flashBtn(fileUndoLimitSaveBtn, !(await r.json()).error);
+        } catch (_) { flashBtn(fileUndoLimitSaveBtn, false); }
+    };
+    fileUndoLimitSaveBtn.addEventListener('click', saveFileUndoLimit);
+    fileUndoLimitInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveFileUndoLimit(); });
 }
 
 function closeSettings() {
@@ -1038,6 +1259,7 @@ function hideBatchStrip() {
 }
 
 async function startUpload(files) {
+    if (state.sessionDir) resetFileHistory();
     state.uploadAbortFlag = false;
     state.sessionDir      = null;
     state.outputFilename  = null;
@@ -1085,6 +1307,8 @@ async function startUpload(files) {
 
     hideBatchStrip();
     updateOutputState();
+    refreshFileUndoRedoButtons();
+    refreshFilePreview();
 
     const n = state.batchFiles.length;
     if (n === 0) {
@@ -1197,6 +1421,8 @@ async function runSequence() {
                 log('Use "Save Output" to download the result.', 'system');
                 state.outputFilename = filename;
                 updateOutputState();
+                refreshFileUndoRedoButtons();
+                refreshFilePreview();
                 if (state.currentPresetName) recordPresetEvent(state.currentPresetName, 'success');
             }
         } catch (e) { log('Execution failed: ' + e.message, 'error'); }
@@ -1236,9 +1462,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         batchProgressText:    document.getElementById('batchProgressText'),
         batchProgressCount:   document.getElementById('batchProgressCount'),
         uploadBarFill:        document.getElementById('uploadBarFill'),
-        // toolbar
+        // split panes
+        splitContainer:       document.getElementById('splitContainer'),
+        splitLeft:            document.getElementById('splitLeft'),
+        splitRight:           document.getElementById('splitRight'),
+        splitHandle:          document.getElementById('splitHandle'),
+        // workflow canvas / viewport
+        workflowPaneContent:  document.getElementById('workflowPaneContent'),
+        workflowCanvas:       document.getElementById('workflowCanvas'),
+        // file preview
+        filePaneContent:      document.getElementById('filePaneContent'),
+        filePreview:          document.getElementById('filePreview'),
+        filePreviewEmpty:     document.getElementById('filePreviewEmpty'),
+        filePreviewTruncation:document.getElementById('filePreviewTruncation'),
+        // pane headers — workflow history
         undoBtn:              document.getElementById('undoBtn'),
         redoBtn:              document.getElementById('redoBtn'),
+        // pane headers — file-content history
+        fileUndoBtn:          document.getElementById('fileUndoBtn'),
+        fileRedoBtn:          document.getElementById('fileRedoBtn'),
         exportBtn:            document.getElementById('exportBtn'),
         exportWrap:           document.getElementById('exportWrap'),
         exportDropdown:       document.getElementById('exportDropdown'),
@@ -1383,6 +1625,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Add Step picker
     el.undoBtn.addEventListener('click', performUndo);
     el.redoBtn.addEventListener('click', performRedo);
+    el.fileUndoBtn.addEventListener('click', performFileUndo);
+    el.fileRedoBtn.addEventListener('click', performFileRedo);
     el.addStepBtn.addEventListener('click', e => { e.stopPropagation(); openPluginDropdown(); });
     el.pluginSearch.addEventListener('input', () => renderPluginList(filteredForAddStep(state.functionCache)));
     el.pluginSearch.addEventListener('keydown', e => { if (e.key === 'Escape') closePluginDropdown(); });
@@ -1436,7 +1680,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (steps.length) log(`Restored ${steps.length} step(s) from last session.`);
     } catch (_) { log('No previous session found.', 'system'); }
 
+    initSplitDrag();
+    initCanvasPan();
     await refreshUndoRedoButtons();
+    await refreshFileUndoRedoButtons();
+    refreshFilePreview();
     updateOutputState();
     updatePresetFilenameDisplay();
     if (localStorage.getItem('serverDebug') === '1') startServerDebug();

@@ -166,3 +166,4 @@ history/*
 workspaces/*
 last_session.json
 config_info.json
+samples/*
