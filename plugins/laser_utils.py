@@ -77,12 +77,12 @@ convert_to_klipper_format.plugin_meta = {
 def add_laser_header_footer(lines):
     """Wrap the file with laser homing, tool pickup, power-off, and drop-off."""
     header = ['HOME_PRINTER\n', 'GRAB_LASER\n']
-    footer = ['SET_PIN PIN=laser VALUE=0\n', '_HOME_XY\n', '_TOOL_DROPOFF\n']
+    footer = ['SET_PIN PIN=laser VALUE=0\n', 'HOME_XY\n', 'TOOL_DROPOFF\n']
     return header + lines + footer
 
 add_laser_header_footer.plugin_meta = {
     "label":       "Add laser header + footer",
-    "description": "Prepends HOME_PRINTER / GRAB_LASER and appends power-off / _HOME_XY / _TOOL_DROPOFF.",
+    "description": "Prepends HOME_PRINTER / GRAB_LASER and appends power-off / HOME_XY / TOOL_DROPOFF.",
 }
 
 
@@ -163,7 +163,7 @@ def _shift_body(body, dx, dy):
     return shifted
 
 
-def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0):
+def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0, skip_first_n=0):
     """
     Tile the laser artwork in a grid to fill the PCB and bake shifted coordinates
     into one file.
@@ -172,8 +172,9 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     Auto-detects artwork extents from G0/G1 X/Y values in the body, computes
     cols = floor(abs(pcb_width) / (art_width + gap)) and the same for rows.
     The sign of pcb_width/pcb_height controls the tiling direction (negative = tile
-    toward lower coordinates).
+    Toward lower coordinates).
     max_copies: if > 0, caps the total number of tiles produced (0 = unlimited).
+    skip_first_n: skips the first N generated duplicate positions in the grid layout.
     """
     # Locate header end (line after GRAB_LASER)
     header_end = 0
@@ -184,8 +185,8 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
 
     # Footer is always the last 3 fixed lines added by add_laser_header_footer
     if (len(lines) >= 3
-            and lines[-1].strip() == '_TOOL_DROPOFF'
-            and lines[-2].strip() == '_HOME_XY'
+            and lines[-1].strip() == 'TOOL_DROPOFF'
+            and lines[-2].strip() == 'HOME_XY'
             and lines[-3].strip() == 'SET_PIN PIN=laser VALUE=0'):
         footer_start = len(lines) - 3
     else:
@@ -218,16 +219,29 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     rows = max(1, int(abs(pcb_height) / (art_h + gap)))
 
     new_body = []
-    total = 0
+    generated_count = 0
+    produced_count = 0
+
     for row in range(rows):
         for col in range(cols):
-            if max_copies > 0 and total >= max_copies:
+            # Check maximum copies limit based on actually produced tiles
+            if max_copies > 0 and produced_count >= max_copies:
                 break
+
+            # Handle skipping the first N layout positions
+            if generated_count < skip_first_n:
+                generated_count += 1
+                continue
+
             dx = col * (art_w + gap) * dir_x
             dy = row * (art_h + gap) * dir_y
+            
             new_body.extend(body if (dx == 0.0 and dy == 0.0) else _shift_body(body, dx, dy))
-            total += 1
-        if max_copies > 0 and total >= max_copies:
+            
+            generated_count += 1
+            produced_count += 1
+            
+        if max_copies > 0 and produced_count >= max_copies:
             break
 
     return header + new_body + footer
@@ -238,6 +252,7 @@ make_laser_grid.plugin_meta = {
         "Duplicates the laser body in a grid that fills the PCB. "
         "Negative pcb_width/pcb_height tiles toward lower coordinates. "
         "max_copies caps total tiles (0 = unlimited). "
+        "skip_first_n skips the first N duplicate grid spaces. "
         "Coordinates are baked in; no Klipper macro changes needed. "
         "Run after 'Add laser header + footer' and 'Inject laser power on Z transitions'."
     ),
