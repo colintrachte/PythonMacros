@@ -163,7 +163,22 @@ def _shift_body(body, dx, dy):
     return shifted
 
 
-def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0, skip_first_n=0):
+def _apply_settings(body, speed=None, power=None):
+    """Replace feed rate (F) and active laser power in a body block."""
+    result = []
+    for line in body:
+        s = line.strip()
+        if speed is not None and (s.startswith('G0') or s.startswith('G1')):
+            line = re.sub(r'F(-?\d+(?:\.\d+)?)', f'F{speed}', line)
+        if power is not None and 'SET_PIN PIN=laser VALUE=' in s and not s.endswith('VALUE=0'):
+            line = re.sub(r'(SET_PIN PIN=laser VALUE=)\S+', f'\\g<1>{power}', line)
+        result.append(line)
+    return result
+
+
+def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0, skip_first_n=0,
+                    speed_min=None, speed_max=None, speed_step=None,
+                    power_min=None, power_max=None, power_step=None):
     """
     Tile the laser artwork in a grid to fill the PCB and bake shifted coordinates
     into one file.
@@ -172,10 +187,28 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     Auto-detects artwork extents from G0/G1 X/Y values in the body, computes
     cols = floor(abs(pcb_width) / (art_width + gap)) and the same for rows.
     The sign of pcb_width/pcb_height controls the tiling direction (negative = tile
-    Toward lower coordinates).
+    toward lower coordinates).
     max_copies: if > 0, caps the total number of tiles produced (0 = unlimited).
     skip_first_n: skips the first N generated duplicate positions in the grid layout.
+
+    Speed test range (varies across columns, left to right):
+      speed_min, speed_max, speed_step — F feed-rate values in mm/min.
+      When set, cols is overridden to match the number of speed steps.
+
+    Power test range (varies across rows, bottom to top):
+      power_min, power_max, power_step — laser power values (0.0–1.0).
+      When set, rows is overridden to match the number of power steps.
     """
+    # Build speed/power sequences from ranges, if provided
+    def _range_list(mn, mx, step):
+        if mn is None or mx is None or step is None:
+            return None
+        n = round((mx - mn) / step) + 1
+        return [mn + i * step for i in range(n)]
+
+    speeds = _range_list(speed_min, speed_max, speed_step)
+    powers = _range_list(power_min, power_max, power_step)
+
     # Locate header end (line after GRAB_LASER)
     header_end = 0
     for i, line in enumerate(lines):
@@ -212,11 +245,11 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     art_w = max(x_vals) - min(x_vals)
     art_h = max(y_vals) - min(y_vals)
 
-    # Use abs() for count, sign for direction
+    # Use abs() for count, sign for direction; ranges override pcb-derived counts
     dir_x = -1.0 if pcb_width < 0 else 1.0
     dir_y = -1.0 if pcb_height < 0 else 1.0
-    cols = max(1, int(abs(pcb_width)  / (art_w + gap)))
-    rows = max(1, int(abs(pcb_height) / (art_h + gap)))
+    cols = len(speeds) if speeds is not None else max(1, int(abs(pcb_width)  / (art_w + gap)))
+    rows = len(powers) if powers is not None else max(1, int(abs(pcb_height) / (art_h + gap)))
 
     new_body = []
     generated_count = 0
@@ -224,23 +257,26 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
 
     for row in range(rows):
         for col in range(cols):
-            # Check maximum copies limit based on actually produced tiles
             if max_copies > 0 and produced_count >= max_copies:
                 break
 
-            # Handle skipping the first N layout positions
             if generated_count < skip_first_n:
                 generated_count += 1
                 continue
 
             dx = col * (art_w + gap) * dir_x
             dy = row * (art_h + gap) * dir_y
-            
-            new_body.extend(body if (dx == 0.0 and dy == 0.0) else _shift_body(body, dx, dy))
-            
+
+            tile = body if (dx == 0.0 and dy == 0.0) else _shift_body(body, dx, dy)
+            if speeds is not None or powers is not None:
+                spd = speeds[col] if speeds is not None else None
+                pwr = powers[row] if powers is not None else None
+                tile = _apply_settings(tile, speed=spd, power=pwr)
+            new_body.extend(tile)
+
             generated_count += 1
             produced_count += 1
-            
+
         if max_copies > 0 and produced_count >= max_copies:
             break
 
@@ -252,7 +288,9 @@ make_laser_grid.plugin_meta = {
         "Duplicates the laser body in a grid that fills the PCB. "
         "Negative pcb_width/pcb_height tiles toward lower coordinates. "
         "max_copies caps total tiles (0 = unlimited). "
-        "skip_first_n skips the first N duplicate grid spaces. "
+        "skip_first_n skips the first N grid positions. "
+        "Speed test (columns): set speed_min, speed_max, speed_step (mm/min) — overrides col count. "
+        "Power test (rows): set power_min, power_max, power_step (0.0–1.0) — overrides row count. "
         "Coordinates are baked in; no Klipper macro changes needed. "
         "Run after 'Add laser header + footer' and 'Inject laser power on Z transitions'."
     ),

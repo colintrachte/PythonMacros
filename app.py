@@ -353,7 +353,7 @@ def get_plugins() -> dict:
 
 # ── Config / workspace routes ──────────────────────────────────────────────
 
-def get_config():
+def get_config() -> dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
@@ -1269,4 +1269,10 @@ def download_batch():
 
 
 if __name__ == '__main__':
+    import socket as _socket
+    if not os.environ.get('WERKZEUG_RUN_MAIN'):
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+            if _s.connect_ex(('localhost', 5000)) == 0:
+                print("Server already running on port 5000 — exiting to avoid duplicate.")
+                raise SystemExit(0)
     app.run(debug=True, port=5000)
