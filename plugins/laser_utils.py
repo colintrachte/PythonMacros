@@ -168,7 +168,7 @@ def _apply_settings(body, speed=None, power=None):
     result = []
     for line in body:
         s = line.strip()
-        if speed is not None and (s.startswith('G0') or s.startswith('G1')):
+        if speed is not None and s.startswith('G1') and re.search(r'[XY]', s) and 'Z' not in s:
             line = re.sub(r'F(-?\d+(?:\.\d+)?)', f'F{speed}', line)
         if power is not None and 'SET_PIN PIN=laser VALUE=' in s and not s.endswith('VALUE=0'):
             line = re.sub(r'(SET_PIN PIN=laser VALUE=)\S+', f'\\g<1>{power}', line)
@@ -200,14 +200,21 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
       When set, rows is overridden to match the number of power steps.
     """
     # Build speed/power sequences from ranges, if provided
-    def _range_list(mn, mx, step):
-        if mn is None or mx is None or step is None:
+    def _range_list(mn, mx, step, label):
+        provided = [x for x in (mn, mx, step) if x is not None]
+        if not provided:
             return None
+        if len(provided) != 3:
+            raise ValueError(f"{label}: must set all three of min, max, and step, or none of them")
+        if step <= 0:
+            raise ValueError(f"{label}_step must be > 0 (got {step})")
+        if mn > mx:
+            raise ValueError(f"{label}_min ({mn}) must be ≤ {label}_max ({mx})")
         n = round((mx - mn) / step) + 1
         return [mn + i * step for i in range(n)]
 
-    speeds = _range_list(speed_min, speed_max, speed_step)
-    powers = _range_list(power_min, power_max, power_step)
+    speeds = _range_list(speed_min, speed_max, speed_step, "speed")
+    powers = _range_list(power_min, power_max, power_step, "power")
 
     # Locate header end (line after GRAB_LASER)
     header_end = 0

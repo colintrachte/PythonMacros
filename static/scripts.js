@@ -1383,6 +1383,7 @@ async function runSequence() {
                 const result = await executeSingleFile(f.name, state.sessionDir, activeSteps);
                 if (result.error) {
                     log(`  [${f.name}] Error: ${result.error}`, 'error');
+                    if (result.trace) result.trace.split('\n').filter(l => l.trim()).forEach(l => log(`    ${l}`, 'error'));
                     failures++;
                 } else {
                     (result.steps||[]).forEach(s => { if (s.warning) log(`  [${f.name}] ${s.step}: ${s.warning}`, 'warn'); });
@@ -1414,6 +1415,7 @@ async function runSequence() {
             const result = await executeSingleFile(filename, state.sessionDir, activeSteps);
             if (result.error) {
                 log(`Error: ${result.error}`, 'error');
+                if (result.trace) result.trace.split('\n').filter(l => l.trim()).forEach(l => log(`  ${l}`, 'error'));
                 if (result.completed?.length) log(`Completed before failure: ${result.completed.join(', ')}`, 'warn');
             } else {
                 (result.steps||[]).forEach(s => { if (s.warning) log(`  ${s.step}: ${s.warning}`, 'warn'); });

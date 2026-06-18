@@ -1114,9 +1114,14 @@ def execute_scripts():
                         if k in fn_params and fn_params[k].default is not inspect.Parameter.empty
                     }
                     payload = fn(payload, **fn_kwargs)
+                except ValueError as e:
+                    return jsonify({
+                        "error":     f"Step '{key}' → '{fn.__name__}': bad input — {e}",
+                        "completed": [s["step"] for s in step_log if "warning" not in s],
+                    }), 400
                 except Exception as e:
                     return jsonify({
-                        "error":     f"Step '{key}' → '{fn.__name__}' raised an exception: {e}",
+                        "error":     f"Step '{key}' → '{fn.__name__}': {type(e).__name__}: {e}",
                         "trace":     traceback.format_exc(),
                         "completed": [s["step"] for s in step_log if "warning" not in s],
                     }), 500
