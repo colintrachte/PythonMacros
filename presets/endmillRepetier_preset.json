@@ -6,24 +6,14 @@
         "args": {}
     },
     {
-        "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
-        "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
+        "pluginKey": "endmill_utils.add_printer_header",
+        "description": "",
         "isChecked": true,
         "args": {}
     },
     {
-        "pluginKey": "laser_utils.inject_laser_power_on_z_moves",
-        "description": "Inject laser on/off at G1 Z0.00 / G0 Z1.00 transitions",
-        "isChecked": true,
-        "args": {
-            "power": 0.5,
-            "engrave_z": 0,
-            "travel_z": 1
-        }
-    },
-    {
-        "pluginKey": "laser_utils.add_laser_header_footer",
-        "description": "Wrap with HOME_PRINTER + GRAB_LASER header and shutdown footer",
+        "pluginKey": "endmill_utils.insert_endmill_power_before_first_z_move",
+        "description": "",
         "isChecked": true,
         "args": {}
     },
@@ -35,8 +25,8 @@
             "pcb_width": -80,
             "pcb_height": -100,
             "gap": 2,
-            "max_copies": 9,
-            "skip_first_n": 3,
+            "max_copies": 2,
+            "skip_first_n": 1,
             "speed_min": null,
             "speed_max": null,
             "speed_step": null,
@@ -44,5 +34,11 @@
             "power_max": null,
             "power_step": null
         }
+    },
+    {
+        "pluginKey": "endmill_utils.add_footer",
+        "description": "",
+        "isChecked": true,
+        "args": {}
     }
 ]

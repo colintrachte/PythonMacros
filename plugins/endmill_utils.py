@@ -23,16 +23,16 @@ PLUGIN_META = {
 # ── Plugins ────────────────────────────────────────────────────────────────
 
 def add_printer_header(lines):
-    """Prepend G28 home-all and GRAB_ENDMILL tool-grab commands to the file."""
+    """Prepend HOME_PRINTER and GRAB_ENDMILL tool-grab commands to the file."""
     header = [
-        "G28 ; Home all axes\n",
+        "HOME_PRINTER ; Home all axes\n",
         "GRAB_ENDMILL\n",
     ]
     return header + lines
 
 add_printer_header.plugin_meta = {
     "label":       "Add printer header",
-    "description": "Prepends G28 home-all and GRAB_ENDMILL to the start of the file.",
+    "description": "Prepends HOME_PRINTER home-all and GRAB_ENDMILL to the start of the file.",
 }
 
 

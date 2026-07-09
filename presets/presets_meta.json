@@ -1,0 +1,17 @@
+{
+    "endmill_preset.json": {
+        "uses": 1,
+        "successes": 0,
+        "last_used": "2026-07-08T17:47:04"
+    },
+    "laser_preset.json": {
+        "uses": 1,
+        "successes": 0,
+        "last_used": "2026-07-08T17:48:17"
+    },
+    "endmillRepetier_preset.json": {
+        "uses": 1,
+        "successes": 1,
+        "last_used": "2026-07-08T17:57:02"
+    }
+}
