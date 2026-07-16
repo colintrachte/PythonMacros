@@ -149,19 +149,41 @@ count_laser_on_segments.plugin_meta = {
 
 # ── Grid tiling ────────────────────────────────────────────────────────────
 
-def _shift_body(body, dx, dy):
-    """Shift every G0/G1 X and Y coordinate in a body block by (dx, dy)."""
+def _shift_body(body, dx=0.0, dy=0.0, dz=0.0):
+    """Shift every G0/G1/G2/G3 X, Y, and Z coordinate in a body block."""
+    if dx == 0 and dy == 0 and dz == 0:
+        return body # fast path
+
     shifted = []
+    coord_pat = re.compile(r'([XYZ])(-?\d+(?:\.\d+)?)')
+
     for line in body:
-        s = line.strip()
-        if s.startswith('G0') or s.startswith('G1'):
-            def replace_coord(m, _dx=dx, _dy=dy):
-                axis = m.group(1)
-                return f'{axis}{float(m.group(2)) + (_dx if axis == "X" else _dy):.2f}'
-            line = re.sub(r'([XY])(-?\d+(?:\.\d+)?)', replace_coord, line)
+        s = line.lstrip()
+        # only touch motion commands – leave comments, M-codes, SET_PIN alone
+        if s.startswith(('G0', 'G1', 'G2', 'G3')):
+            def repl(m):
+                axis, val = m.group(1), float(m.group(2))
+                if axis == 'X':
+                    val += dx
+                elif axis == 'Y':
+                    val += dy
+                else: # Z
+                    val += dz
+                # keep 3 decimals, strip trailing zeros to match typical gcode style
+                return f"{axis}{val:.3f}".rstrip('0').rstrip('.')
+            line = coord_pat.sub(repl, line)
         shifted.append(line)
     return shifted
 
+def offset_gcode(lines, dx=0.0, dy=0.0, dz=0.0):
+    """
+    lines — list[str], the input file split into lines, with newlines preserved.
+    dx, dy, dz — amounts to add to every X, Y, Z coordinate.
+
+    Return — list[str], the transformed content.
+    Run this as a standalone step, or call _shift_body() from other plugins.
+    """
+    return _shift_body(lines, dx, dy, dz)
 
 def _apply_settings(body, speed=None, power=None):
     """Replace feed rate (F) and active laser power in a body block."""
@@ -219,7 +241,7 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     # Locate header end (line after GRAB_LASER)
     header_end = 0
     for i, line in enumerate(lines):
-        if line.strip() == 'GRAB_LASER':
+        if line.strip() == 'GRAB_ENDMILL':
             header_end = i + 1
             break
 
@@ -227,7 +249,7 @@ def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies
     if (len(lines) >= 3
             and lines[-1].strip() == 'TOOL_DROPOFF'
             and lines[-2].strip() == 'HOME_XY'
-            and lines[-3].strip() == 'SET_PIN PIN=laser VALUE=0'):
+            and lines[-3].strip() == 'SET_PIN PIN=end_mill VALUE=0'):
         footer_start = len(lines) - 3
     else:
         footer_start = len(lines)

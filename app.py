@@ -1005,16 +1005,17 @@ def preview_file():
     )
 
     MAX_LINES = 2000
+    full = request.args.get('full') == '1'
     if is_text:
         try:
-            with open(path, "r", errors="replace") as f:
+            with open(path, "r", errors="replace", newline="") as f:
                 lines = f.readlines()
             truncated = len(lines) > MAX_LINES
             return jsonify({
                 "type":        "text",
-                "content":     "".join(lines[:MAX_LINES]),
+                "content":     "".join(lines if full else lines[:MAX_LINES]),
                 "total_lines": len(lines),
-                "truncated":   truncated,
+                "truncated":   truncated and not full,
                 "mime_type":   mime,
             })
         except OSError as e:
@@ -1025,6 +1026,41 @@ def preview_file():
             "mime_type": mime,
             "size":      os.path.getsize(path),
         })
+
+
+@app.route('/update_file', methods=['POST'])
+def update_file():
+    """Replace a session text file, recording the previous contents for undo."""
+    data = request.json or {}
+    session_dir = os.path.basename(data.get('session_dir', '').strip())
+    filename = os.path.basename(data.get('filename', '').strip())
+    content = data.get('content')
+    if not session_dir or not filename or not isinstance(content, str):
+        return jsonify({"error": "Missing session_dir, filename, or content"}), 400
+
+    path = os.path.join(get_config()['workspace'], session_dir, filename)
+    if not os.path.isfile(path):
+        return jsonify({"error": "File not found"}), 404
+
+    mime, _ = mimetypes.guess_type(path)
+    mime = mime or "application/octet-stream"
+    is_text = (
+        mime.startswith("text/")
+        or mime in ("application/json", "application/xml", "application/javascript")
+    )
+    if not is_text:
+        return jsonify({"error": "Binary files cannot be edited as text"}), 415
+
+    try:
+        with open(path, "r", errors="replace", newline="") as f:
+            current = f.read()
+        if current != content:
+            fh_push_snapshot(session_dir, filename, path)
+            with open(path, "w", newline="") as f:
+                f.write(content)
+    except OSError as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"status": "ok"})
 
 
 @app.route('/settings_info', methods=['GET'])

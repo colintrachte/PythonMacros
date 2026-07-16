@@ -35,7 +35,7 @@ Click **Run** (or `Ctrl+Enter`). Each step processes the file in sequence. Warni
 
 ### 4. Export
 
-Click **Export → Save** (`Ctrl+S`) to download the processed file. **Save As…** lets you choose the filename via a native dialog.
+Click **Export** to choose the filename and location via a native dialog. If the browser does not support a native save dialog, the processed file downloads normally.
 
 ---
 

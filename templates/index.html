@@ -153,6 +153,11 @@
 
                 <div style="flex:1"></div>
 
+                <span class="file-edit-status" id="fileEditStatus"></span>
+                <button class="tb-btn" id="applyFileEditBtn" title="Save edits to the working file" disabled>
+                    Apply edits
+                </button>
+
                 <!-- File undo/redo -->
                 <button class="tb-btn" id="fileUndoBtn" title="Undo file change" disabled>
                     <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -173,34 +178,13 @@
                 <div class="tb-section-divider"></div>
 
                 <!-- Export -->
-                <div class="import-wrap" id="exportWrap">
-                    <button class="tb-btn import-btn" id="exportBtn" title="Export output (Ctrl+S)" disabled>
-                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                        </svg>
-                        Export
-                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <div class="import-dropdown" id="exportDropdown">
-                        <button class="import-option" id="exportSaveOpt">
-                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                            Save
-                        </button>
-                        <button class="import-option" id="exportSaveAsOpt">
-                            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4M12 4v8"/>
-                            </svg>
-                            Save As…
-                        </button>
-                    </div>
-                </div>
+                <button class="tb-btn" id="exportBtn" title="Export output to a chosen location" disabled>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Export
+                </button>
                 <span class="output-filename" id="outputFilename"></span>
             </div>
 
@@ -213,7 +197,8 @@
                     </svg>
                     <div>Import a file to preview its contents</div>
                 </div>
-                <pre class="file-preview" id="filePreview" style="display:none"></pre>
+                <textarea class="file-preview file-editor" id="filePreview" style="display:none"
+                          spellcheck="false" aria-label="File contents"></textarea>
                 <div class="file-preview-truncation" id="filePreviewTruncation" style="display:none"></div>
             </div>
         </div>

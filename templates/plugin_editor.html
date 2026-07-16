@@ -397,36 +397,51 @@
     <script>
     const API_BASE = 'http://localhost:5000';
 
-    const TEMPLATE = `# ── PY-AUTOMATE Plugin ───────────────────────────────────
+    const TEMPLATE = `# PY-AUTOMATE plugin context
+# Describe the plugin you want below this template. Return only a complete
+# Python file: no Markdown fences or explanation.
 #
-# Paste this entire block into any AI chat as context,
-# then describe what you want the plugin to do.
-# The AI will output code you can paste into the editor.
-#
-# ─────────────────────────────────────────────────────────
+# Every public function becomes a pipeline step. For ordinary text files, use
+# the list[str] signature shown here. Lines retain their newline characters.
+# Extra parameters with defaults become editable controls on the step card.
 
 PLUGIN_META = {
-    "label":       "My Plugin",       # name shown in the UI
-    "description": "What this does.", # one-line summary
-    "accepts":     ["text/plain"],    # MIME types it works on
-    "outputs":     ["text/plain"],    #   e.g. "text/x-gcode", "image/png"
-    "tags":        [],                # filter tags, e.g. ["gcode", "text"]
+    "label":       "My Plugin",
+    "description": "One-line summary shown in the plugin picker.",
+    "accepts":     ["text/plain"],
+    "outputs":     ["text/plain"],
+    "tags":        ["text"],
+    "requires":    [],  # optional pip package names
+    "external":    [],  # optional system executables, e.g. ["ffmpeg"]
+    "language":    "python",
+    "args": [
+        {"name": "repeat", "label": "Repeat count"},
+    ],
 }
 
-def my_step(lines):
-    """
-    lines  — list[str], the input file split into lines,
-             with newlines preserved (e.g. "G1 X10\\n").
-    Return — list[str], the transformed content.
-
-    Each public function in this file becomes one pipeline
-    step, run in top-to-bottom order.  Add more functions
-    for multi-step plugins.
-    """
+def my_step(lines: list[str], repeat=1) -> list[str]:
+    """Transform the input and return a new line list."""
     result = []
     for line in lines:
-        result.append(line)   # ← replace with your logic
+        result.extend([line] * repeat)
     return result
+
+my_step.plugin_meta = {
+    "label":       "My Step",
+    "description": "A function-specific label and description.",
+}
+
+# For binary data, MIME changes, or inter-step metadata, use this signature
+# instead (do not import Payload at runtime):
+#
+# from typing import TYPE_CHECKING
+# if TYPE_CHECKING:
+#     from app import Payload
+#
+# def advanced_step(payload: "Payload") -> "Payload":
+#     payload.meta["processed"] = True
+#     payload.mime_type = "text/plain"
+#     return payload
 `;
 
     document.getElementById('refCode').textContent = TEMPLATE;

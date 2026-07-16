@@ -30,6 +30,8 @@ const state = {
     // Modals
     presetLibraryOpen:     false,
     cachedPresets:         [],
+    fileEditDirty:         false,
+    fileEditSaving:        false,
 };
 
 let el = {};
@@ -342,25 +344,78 @@ function initCanvasPan() {
 // ── File preview ───────────────────────────────────────────────────────────
 
 const PREVIEW_MAX_LINES = 2000;
+let fileEditTimer = null;
+let fileEditSavePromise = null;
 
-async function refreshFilePreview() {
+function updateFileEditControls() {
+    if (!el.applyFileEditBtn) return;
+    el.applyFileEditBtn.disabled = !state.fileEditDirty || state.fileEditSaving;
+    el.fileEditStatus.textContent = state.fileEditSaving
+        ? 'Saving…'
+        : state.fileEditDirty ? 'Unsaved edits' : '';
+}
+
+async function saveFileEdits() {
+    clearTimeout(fileEditTimer);
+    if (state.fileEditSaving) return fileEditSavePromise;
+    if (!state.fileEditDirty || el.filePreview.readOnly) return;
+
+    const content = el.filePreview.value;
+    state.fileEditSaving = true;
+    updateFileEditControls();
+    fileEditSavePromise = (async () => {
+        try {
+            const r = await fetch(`${API_BASE}/update_file`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_dir: state.sessionDir,
+                    filename: state.outputFilename,
+                    content,
+                }),
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Save failed');
+            if (el.filePreview.value === content) state.fileEditDirty = false;
+            await refreshFileUndoRedoButtons();
+        } catch (e) {
+            log('File edit failed: ' + e.message, 'error');
+        } finally {
+            state.fileEditSaving = false;
+            updateFileEditControls();
+            if (state.fileEditDirty) fileEditTimer = setTimeout(saveFileEdits, 700);
+        }
+    })();
+    try {
+        await fileEditSavePromise;
+    } finally {
+        fileEditSavePromise = null;
+    }
+}
+
+async function refreshFilePreview(force = false) {
     if (!state.sessionDir || !state.outputFilename || state.isBatchSession) {
+        clearTimeout(fileEditTimer);
+        state.fileEditDirty = false;
         el.filePreview.style.display          = 'none';
         el.filePreviewTruncation.style.display = 'none';
         el.filePreviewEmpty.style.display     = '';
+        updateFileEditControls();
         return;
     }
+    if (state.fileEditDirty && !force) return;
     try {
         const r = await fetch(
             `${API_BASE}/preview_file`
             + `?session_dir=${encodeURIComponent(state.sessionDir)}`
             + `&filename=${encodeURIComponent(state.outputFilename)}`
+            + `&full=1`
         );
         const d = await r.json();
         if (d.error) { return; }
 
         if (d.type === 'text') {
-            el.filePreview.textContent            = d.content;
+            el.filePreview.value                  = d.content;
+            el.filePreview.readOnly               = false;
             el.filePreview.style.display          = '';
             el.filePreviewEmpty.style.display     = 'none';
             if (d.truncated) {
@@ -371,11 +426,14 @@ async function refreshFilePreview() {
                 el.filePreviewTruncation.style.display = 'none';
             }
         } else {
-            el.filePreview.textContent            = `[${d.mime_type}  ·  ${fmtBytes(d.size)}]`;
+            el.filePreview.value                  = `[${d.mime_type}  ·  ${fmtBytes(d.size)}]\n\nBinary files cannot be edited as text.`;
+            el.filePreview.readOnly               = true;
             el.filePreview.style.display          = '';
             el.filePreviewEmpty.style.display     = 'none';
             el.filePreviewTruncation.style.display = 'none';
         }
+        state.fileEditDirty = false;
+        updateFileEditControls();
     } catch (_) {}
 }
 
@@ -407,6 +465,7 @@ async function refreshFileUndoRedoButtons() {
 
 async function performFileUndo() {
     if (!state.sessionDir || !state.outputFilename) return;
+    if (state.fileEditDirty) await saveFileEdits();
     try {
         const r = await fetch(`${API_BASE}/file_history/undo`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -414,13 +473,14 @@ async function performFileUndo() {
         });
         if (!r.ok) { log('Nothing to undo.', 'warn'); return; }
         await refreshFileUndoRedoButtons();
-        refreshFilePreview();
+        refreshFilePreview(true);
         log('File undone.', 'info');
     } catch (e) { log('File undo failed: ' + e.message, 'error'); }
 }
 
 async function performFileRedo() {
     if (!state.sessionDir || !state.outputFilename) return;
+    if (state.fileEditDirty) await saveFileEdits();
     try {
         const r = await fetch(`${API_BASE}/file_history/redo`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -428,7 +488,7 @@ async function performFileRedo() {
         });
         if (!r.ok) { log('Nothing to redo.', 'warn'); return; }
         await refreshFileUndoRedoButtons();
-        refreshFilePreview();
+        refreshFilePreview(true);
         log('File redone.', 'info');
     } catch (e) { log('File redo failed: ' + e.message, 'error'); }
 }
@@ -1259,6 +1319,7 @@ function hideBatchStrip() {
 }
 
 async function startUpload(files) {
+    if (state.fileEditDirty) await saveFileEdits();
     if (state.sessionDir) resetFileHistory();
     state.uploadAbortFlag = false;
     state.sessionDir      = null;
@@ -1353,6 +1414,7 @@ async function executeSingleFile(filename, sessionDir, activeSteps) {
 }
 
 async function runSequence() {
+    if (state.fileEditDirty) await saveFileEdits();
     if (!state.sessionDir) { log('No file loaded. Select a file or folder first.', 'error'); return; }
 
     const activeSteps = getSequence().filter(s => s.isChecked);
@@ -1477,6 +1539,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         filePreview:          document.getElementById('filePreview'),
         filePreviewEmpty:     document.getElementById('filePreviewEmpty'),
         filePreviewTruncation:document.getElementById('filePreviewTruncation'),
+        applyFileEditBtn:     document.getElementById('applyFileEditBtn'),
+        fileEditStatus:       document.getElementById('fileEditStatus'),
         // pane headers — workflow history
         undoBtn:              document.getElementById('undoBtn'),
         redoBtn:              document.getElementById('redoBtn'),
@@ -1484,10 +1548,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         fileUndoBtn:          document.getElementById('fileUndoBtn'),
         fileRedoBtn:          document.getElementById('fileRedoBtn'),
         exportBtn:            document.getElementById('exportBtn'),
-        exportWrap:           document.getElementById('exportWrap'),
-        exportDropdown:       document.getElementById('exportDropdown'),
-        exportSaveOpt:        document.getElementById('exportSaveOpt'),
-        exportSaveAsOpt:      document.getElementById('exportSaveAsOpt'),
         outputFilename:       document.getElementById('outputFilename'),
         // choose plugins
         choosePluginsBtn:     document.getElementById('choosePluginsBtn'),
@@ -1584,13 +1644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     document.getElementById('batchAbortBtn').addEventListener('click', abortUpload);
 
-    // Export dropdown
-    let exportOpen = false;
-    function openExportDropdown()  { exportOpen = true;  el.exportDropdown.classList.add('open'); el.exportBtn.classList.add('open'); }
-    function closeExportDropdown() { exportOpen = false; el.exportDropdown.classList.remove('open'); el.exportBtn.classList.remove('open'); }
-    el.exportBtn.addEventListener('click', e => { e.stopPropagation(); if (!el.exportBtn.disabled) { exportOpen ? closeExportDropdown() : openExportDropdown(); } });
-    el.exportSaveOpt.addEventListener('click', () => { closeExportDropdown(); saveOutput(); });
-    el.exportSaveAsOpt.addEventListener('click', () => { closeExportDropdown(); saveOutputAs(); });
+    el.exportBtn.addEventListener('click', saveOutputAs);
 
     // Settings panel
     el.settingsBtn.addEventListener('click', e => { e.stopPropagation(); openSettings(); });
@@ -1629,6 +1683,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.redoBtn.addEventListener('click', performRedo);
     el.fileUndoBtn.addEventListener('click', performFileUndo);
     el.fileRedoBtn.addEventListener('click', performFileRedo);
+    el.applyFileEditBtn.addEventListener('click', saveFileEdits);
+    el.filePreview.addEventListener('input', () => {
+        state.fileEditDirty = true;
+        updateFileEditControls();
+        clearTimeout(fileEditTimer);
+        fileEditTimer = setTimeout(saveFileEdits, 700);
+    });
+    el.filePreview.addEventListener('keydown', e => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = el.filePreview.selectionStart;
+            const end = el.filePreview.selectionEnd;
+            el.filePreview.setRangeText('    ', start, end, 'end');
+            el.filePreview.dispatchEvent(new Event('input'));
+        }
+    });
     el.addStepBtn.addEventListener('click', e => { e.stopPropagation(); openPluginDropdown(); });
     el.pluginSearch.addEventListener('input', () => renderPluginList(filteredForAddStep(state.functionCache)));
     el.pluginSearch.addEventListener('keydown', e => { if (e.key === 'Escape') closePluginDropdown(); });
@@ -1653,20 +1723,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (importOpen &&
             !el.importWrap.contains(e.target))
             closeImportDropdown();
-        if (exportOpen &&
-            !el.exportWrap.contains(e.target))
-            closeExportDropdown();
     });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
         const ctrl = e.ctrlKey || e.metaKey;
+        const editingFile = e.target === el.filePreview;
+        if (ctrl && e.key === 's' && editingFile) { e.preventDefault(); saveFileEdits(); return; }
+        if (editingFile) return;
         if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); }
         if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); performRedo(); }
         if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); saveOutput(); }
         if (ctrl && e.key === 's' &&  e.shiftKey) { e.preventDefault(); saveOutputAs(); }
         if (ctrl && e.key === 'p') { e.preventDefault(); savePreset(); }
-        if (e.key === 'Escape') { closePresetLibrary(); closeChoosePlugins(); closeSettings(); closeImportDropdown(); closeExportDropdown(); el.renameModal.classList.remove('open'); }
+        if (e.key === 'Escape') { closePresetLibrary(); closeChoosePlugins(); closeSettings(); closeImportDropdown(); el.renameModal.classList.remove('open'); }
     });
 
     // Boot
