@@ -1,32 +1,62 @@
 [
     {
         "pluginKey": "endmill_utils.remove_before_first_M03",
-        "description": "Strip FlatCAM preamble (everything before M03 spindle-on)",
-        "isChecked": true
+        "description": "Keep content after the configured spindle-on marker",
+        "isChecked": true,
+        "args": {
+            "start_command": "M03",
+            "keep_start_command": false,
+            "require_start_command": true
+        }
     },
     {
-        "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
-        "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
-        "isChecked": true
+        "pluginKey": "endmill_utils.normalize_gcode_format",
+        "description": "Normalize formatting while preserving rapid and linear moves",
+        "isChecked": true,
+        "args": {
+            "decimal_places": 2,
+            "normalize_leading_zeros": true
+        }
     },
     {
         "pluginKey": "endmill_utils.insert_endmill_power_before_first_z_move",
-        "description": "Inject SET_PIN PIN=end_mill VALUE=250 before first Z plunge",
-        "isChecked": true
+        "description": "Activate the configured endmill output before the first Z move",
+        "isChecked": true,
+        "args": {
+            "pin_name": "end_mill",
+            "power": 250,
+            "power_command": "",
+            "motion_codes": "G0|G1",
+            "require_z_move": true
+        }
     },
     {
         "pluginKey": "endmill_utils.remove_after_M107",
-        "description": "Truncate at M107 (spindle off), stripping FlatCAM footer",
-        "isChecked": true
+        "description": "Stop at the configured spindle-off marker",
+        "isChecked": true,
+        "args": {
+            "end_command": "M107",
+            "keep_end_command": false,
+            "require_end_command": true
+        }
     },
     {
         "pluginKey": "endmill_utils.add_printer_header",
-        "description": "Prepend G28 home + GRAB_ENDMILL",
-        "isChecked": true
+        "description": "Add configured homing and tool-selection commands",
+        "isChecked": true,
+        "args": {
+            "home_command": "HOME_PRINTER ; Home all axes",
+            "tool_command": "GRAB_ENDMILL"
+        }
     },
     {
         "pluginKey": "endmill_utils.add_footer",
-        "description": "Append shutdown footer (SET_PIN VALUE=0, HOME_XY, TOOL_DROPOFF)",
-        "isChecked": true
+        "description": "Add configured shutdown and tool-release commands",
+        "isChecked": true,
+        "args": {
+            "shutdown_command": "SET_PIN PIN=end_mill VALUE=0",
+            "home_command": "HOME_XY",
+            "tool_command": "TOOL_DROPOFF"
+        }
     }
 ]

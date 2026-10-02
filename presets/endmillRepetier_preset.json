@@ -1,21 +1,36 @@
 [
     {
         "pluginKey": "laser_utils.remove_flatcam_preamble",
-        "description": "",
+        "description": "Extract content between configured Repetier markers",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "start_command": "M106",
+            "end_command": "M107",
+            "keep_start_command": false,
+            "keep_end_command": false,
+            "require_markers": true
+        }
     },
     {
         "pluginKey": "endmill_utils.add_printer_header",
-        "description": "",
+        "description": "Add configured homing and endmill selection commands",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "home_command": "HOME_PRINTER ; Home all axes",
+            "tool_command": "GRAB_ENDMILL"
+        }
     },
     {
         "pluginKey": "endmill_utils.insert_endmill_power_before_first_z_move",
-        "description": "",
+        "description": "Activate the configured endmill output before the first Z move",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "pin_name": "end_mill",
+            "power": 250,
+            "power_command": "",
+            "motion_codes": "G0|G1",
+            "require_z_move": true
+        }
     },
     {
         "pluginKey": "laser_utils.make_laser_grid",
@@ -32,13 +47,22 @@
             "speed_step": null,
             "power_min": null,
             "power_max": null,
-            "power_step": null
+            "power_step": null,
+            "header_end_command": "GRAB_ENDMILL",
+            "footer_start_command": "",
+            "pin_name": "end_mill",
+            "decimal_places": 3,
+            "max_generated_tiles": 10000
         }
     },
     {
         "pluginKey": "endmill_utils.add_footer",
-        "description": "",
+        "description": "Add configured shutdown and tool-release commands",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "shutdown_command": "SET_PIN PIN=end_mill VALUE=0",
+            "home_command": "HOME_XY",
+            "tool_command": "TOOL_DROPOFF"
+        }
     }
 ]

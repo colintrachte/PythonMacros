@@ -1,31 +1,36 @@
 [
     {
         "pluginKey": "laser_utils.remove_flatcam_preamble",
-        "description": "",
-        "isChecked": true,
-        "args": {}
-    },
-    {
-        "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
-        "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
-        "isChecked": true,
-        "args": {}
-    },
-    {
-        "pluginKey": "laser_utils.inject_laser_power_on_z_moves",
-        "description": "Inject laser on/off at G1 Z0.00 / G0 Z1.00 transitions",
+        "description": "Extract content between configured FlatCAM markers",
         "isChecked": true,
         "args": {
-            "power": 0.5,
-            "engrave_z": 0,
-            "travel_z": 1
+            "start_command": "M106",
+            "end_command": "M107",
+            "keep_start_command": false,
+            "keep_end_command": false,
+            "require_markers": true
+        }
+    },
+    {
+        "pluginKey": "endmill_utils.normalize_gcode_format",
+        "description": "Normalize formatting while preserving rapid and linear moves",
+        "isChecked": true,
+        "args": {
+            "decimal_places": 2,
+            "normalize_leading_zeros": true
         }
     },
     {
         "pluginKey": "laser_utils.add_laser_header_footer",
-        "description": "Wrap with HOME_PRINTER + GRAB_LASER header and shutdown footer",
+        "description": "Add configured laser setup and shutdown commands",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "home_command": "HOME_PRINTER",
+            "tool_command": "GRAB_LASER",
+            "shutdown_command": "M5",
+            "finish_home_command": "HOME_XY",
+            "release_command": "TOOL_DROPOFF"
+        }
     },
     {
         "pluginKey": "laser_utils.make_laser_grid",
@@ -42,7 +47,12 @@
             "speed_step": null,
             "power_min": null,
             "power_max": null,
-            "power_step": null
+            "power_step": null,
+            "header_end_command": "GRAB_LASER",
+            "footer_start_command": "M5",
+            "pin_name": "laser",
+            "decimal_places": 3,
+            "max_generated_tiles": 10000
         }
     }
 ]

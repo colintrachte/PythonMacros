@@ -1,326 +1,478 @@
-"""
-laser_utils.py — G-code post-processing plugins for laser cutter operations.
-
-Mix of legacy list[str] -> list[str] functions (auto-wrapped by the loader)
-and one new-style Payload function that demonstrates writing to payload.meta.
-"""
+"""Configurable G-code transformations for laser workflows."""
 
 import re
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from app import Payload   # pragma: no cover
 
-# ── Module-level metadata ──────────────────────────────────────────────────
+if TYPE_CHECKING:
+    from app import Payload
+
 
 PLUGIN_META = {
-    "accepts":  ["text/plain", "text/x-gcode"],
-    "outputs":  ["text/plain", "text/x-gcode"],
+    "accepts": ["text/plain", "text/x-gcode"],
+    "outputs": ["text/plain", "text/x-gcode"],
     "requires": [],
     "external": [],
     "language": "python",
-    "tags":     ["gcode", "laser"],
+    "tags": ["gcode", "laser"],
 }
 
-# ── Plugins ────────────────────────────────────────────────────────────────
+_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
+_MOTION_PATTERN = re.compile(r"^\s*G0?([0-3])\b", re.IGNORECASE)
+_COORD_PATTERN = re.compile(
+    rf"(?<![A-Z_])(?P<axis>[XYZ])(?P<value>{_NUMBER})", re.IGNORECASE
+)
 
-def remove_flatcam_preamble(lines):
-    """
-    Strip the FlatCAM Repetier preamble and trailing shutdown from laser gcode.
 
-    Removes everything up to and including the first M106 (Repetier spindle-on),
-    and truncates at the first M107 (Repetier spindle-off) so only the toolpath
-    remains. The laser header/footer plugin adds the correct Klipper commands.
-    """
-    start = next((i for i, l in enumerate(lines) if l.strip() == 'M106'), -1)
-    lines = lines[start + 1:] if start != -1 else lines
-    end = next((i for i, l in enumerate(lines) if l.strip() == 'M107'), len(lines))
-    return lines[:end]
+def _line_ending(line):
+    return "\r\n" if line.endswith("\r\n") else "\n"
+
+
+def _as_line(command, ending="\n"):
+    command = str(command).strip()
+    return f"{command}{ending}" if command else ""
+
+
+def _code_part(line):
+    return line.split(";", 1)[0]
+
+
+def _normalize_gcode_word(value):
+    return re.sub(r"^(?P<letter>[GM])0+(?=\d)", r"\g<letter>", value.upper())
+
+
+def _has_command(line, command):
+    command = str(command).strip()
+    if not command:
+        return False
+    return (
+        re.search(
+            rf"(?<!\w){re.escape(command)}(?!\w)", _code_part(line), re.IGNORECASE
+        )
+        is not None
+    )
+
+
+def _format_number(value, decimal_places=6):
+    formatted = f"{value:.{decimal_places}f}".rstrip("0").rstrip(".")
+    return "0" if formatted in {"-0", "+0", ""} else formatted
+
+
+def replace_m_codes(lines: list[str], codes="3|5") -> list[str]:
+    """Remove leading zeroes from configurable M-codes, excluding comments."""
+    code_values = []
+    for value in str(codes).split("|"):
+        value = value.strip().upper().removeprefix("M").lstrip("0") or "0"
+        if not value.isdigit():
+            raise ValueError(f"Invalid M-code value: {value!r}")
+        code_values.append(re.escape(value))
+    if not code_values:
+        return lines
+
+    pattern = re.compile(
+        rf"(?<!\w)(M)0*(?:{'|'.join(code_values)})(?!\w)", re.IGNORECASE
+    )
+
+    def shorten(match):
+        digits = match.group(0)[1:].lstrip("0") or "0"
+        return f"{match.group(1)}{digits}"
+
+    result = []
+    for line in lines:
+        code, separator, comment = line.partition(";")
+        result.append(
+            pattern.sub(shorten, code) + (separator + comment if separator else "")
+        )
+    return result
+
+
+replace_m_codes.plugin_meta = {
+    "label": "Normalize selected M-codes",
+    "description": "Removes leading zeroes from a configurable pipe-separated list of M-codes.",
+}
+
+
+def remove_flatcam_preamble(
+    lines,
+    start_command="M106",
+    end_command="M107",
+    keep_start_command=False,
+    keep_end_command=False,
+    require_markers=False,
+):
+    """Keep the content between configurable whole-command markers."""
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _has_command(line, start_command)
+        ),
+        None,
+    )
+    if start is None:
+        if require_markers:
+            raise ValueError(f"Start command {start_command!r} was not found")
+        body_start = 0
+    else:
+        body_start = start if keep_start_command else start + 1
+
+    end = next(
+        (
+            index
+            for index in range(body_start, len(lines))
+            if _has_command(lines[index], end_command)
+        ),
+        None,
+    )
+    if end is None:
+        if require_markers:
+            raise ValueError(f"End command {end_command!r} was not found")
+        body_end = len(lines)
+    else:
+        body_end = end + 1 if keep_end_command else end
+    return lines[body_start:body_end]
+
 
 remove_flatcam_preamble.plugin_meta = {
-    "label":       "Remove FlatCAM preamble / trailer",
-    "description": "Strips everything before M106 (spindle-on) and after M107 (spindle-off), leaving only the laser toolpath.",
+    "label": "Extract G-code between commands",
+    "description": "Keeps content between configurable start and end command markers.",
 }
 
 
-def convert_to_klipper_format(lines):
-    """
-    Convert legacy laser G-code (G1 with S spindle values) to Klipper
-    SET_PIN PIN=laser format.
-    """
+def convert_to_klipper_format(lines, pin_name="laser", power_scale=1.0):
+    """Move S words on G1 lines into Klipper SET_PIN commands."""
     result = []
-    for line in lines:
-        line = line.strip()
-        if line.startswith("G1") and "S" in line:
-            parts = line.split()
-            x_val = next((p[1:] for p in parts if p.startswith("X")), None)
-            y_val = next((p[1:] for p in parts if p.startswith("Y")), None)
-            s_val = next((p[1:] for p in parts if p.startswith("S")), None)
-            f_val = next((p[1:] for p in parts if p.startswith("F")), None)
+    s_pattern = re.compile(rf"(?<![A-Z])S(?P<value>{_NUMBER})\b", re.IGNORECASE)
 
-            if s_val is not None:
-                result.append(f"SET_PIN PIN=laser VALUE={s_val}\n")
-            if x_val and y_val and f_val:
-                result.append(f"G1 X{x_val} Y{y_val} F{f_val}\n")
-        else:
-            result.append(line + '\n')
+    for line in lines:
+        code = _code_part(line)
+        match = (
+            s_pattern.search(code)
+            if re.match(r"^\s*G0?1\b", code, re.IGNORECASE)
+            else None
+        )
+        if not match:
+            result.append(line)
+            continue
+
+        ending = _line_ending(line)
+        value = float(match.group("value")) * power_scale
+        result.append(f"SET_PIN PIN={pin_name} VALUE={_format_number(value)}{ending}")
+        converted = s_pattern.sub("", line, count=1)
+        converted = re.sub(r"[ \t]{2,}", " ", converted)
+        converted = re.sub(r"[ \t]+(?=\r?$)", "", converted)
+        result.append(converted)
     return result
+
 
 convert_to_klipper_format.plugin_meta = {
-    "label":       "Convert S-value G-code → Klipper SET_PIN",
-    "description": (
-        "Rewrites G1 moves that carry an S (spindle/power) parameter into "
-        "separate SET_PIN PIN=laser VALUE=… and G1 X… Y… F… lines."
-    ),
+    "label": "Convert S words to Klipper SET_PIN",
+    "description": "Extracts only the S word and preserves every other move parameter and comment.",
 }
 
 
-def add_laser_header_footer(lines):
-    """Wrap the file with laser homing, tool pickup, power-off, and drop-off."""
-    header = ['HOME_PRINTER\n', 'GRAB_LASER\n']
-    footer = ['SET_PIN PIN=laser VALUE=0\n', 'HOME_XY\n', 'TOOL_DROPOFF\n']
+def add_laser_header_footer(
+    lines,
+    home_command="HOME_PRINTER",
+    tool_command="GRAB_LASER",
+    shutdown_command="M5",
+    finish_home_command="HOME_XY",
+    release_command="TOOL_DROPOFF",
+):
+    """Wrap G-code with configurable setup and safe-shutdown commands."""
+    header = [
+        _as_line(command)
+        for command in (home_command, tool_command)
+        if str(command).strip()
+    ]
+    footer = [
+        _as_line(command)
+        for command in (shutdown_command, finish_home_command, release_command)
+        if str(command).strip()
+    ]
     return header + lines + footer
 
+
 add_laser_header_footer.plugin_meta = {
-    "label":       "Add laser header + footer",
-    "description": "Prepends HOME_PRINTER / GRAB_LASER and appends power-off / HOME_XY / TOOL_DROPOFF.",
+    "label": "Add laser header and footer",
+    "description": "Adds configurable setup, shutdown, homing, and tool-release commands.",
 }
 
 
-def inject_laser_power_on_z_moves(lines, power=0.4, engrave_z=0.0, travel_z=1.0):
-    """
-    Inject laser power commands around Z-height transitions.
-
-    G1 Z<engrave_z> → keep line, then SET_PIN PIN=laser VALUE=<power>
-    G0/G1 Z<travel_z> → SET_PIN PIN=laser VALUE=0 first, then keep the lift move
-    """
-    ez = f"Z{engrave_z:.2f}"
-    tz = f"Z{travel_z:.2f}"
+def inject_laser_power_on_z_moves(
+    lines,
+    power=0.4,
+    engrave_z=0.0,
+    travel_z=1.0,
+    pin_name="laser",
+    tolerance=0.0001,
+    engrave_motion_codes="G1",
+    travel_motion_codes="G0|G1",
+):
+    """Switch laser power around configurable Z-height transitions."""
+    if tolerance < 0:
+        raise ValueError("tolerance must be non-negative")
+    if power < 0:
+        raise ValueError("power must be non-negative")
+    if abs(engrave_z - travel_z) <= tolerance:
+        raise ValueError("engrave_z and travel_z must differ by more than tolerance")
+    engrave_codes = {
+        _normalize_gcode_word(code.strip())
+        for code in str(engrave_motion_codes).split("|")
+        if code.strip()
+    }
+    travel_codes = {
+        _normalize_gcode_word(code.strip())
+        for code in str(travel_motion_codes).split("|")
+        if code.strip()
+    }
+    z_pattern = re.compile(rf"(?<![A-Z])Z(?P<value>{_NUMBER})\b", re.IGNORECASE)
     result = []
+
     for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(f"G1 {ez}"):
+        code = _code_part(line)
+        motion = re.match(r"^\s*G0?(?P<kind>[01])\b", code, re.IGNORECASE)
+        z_match = z_pattern.search(code)
+        if not motion or not z_match:
             result.append(line)
-            result.append(f"SET_PIN PIN=laser VALUE={power}\n")
-        elif stripped.startswith(f"G0 {tz}") or stripped.startswith(f"G1 {tz}"):
-            result.append("SET_PIN PIN=laser VALUE=0\n")
+            continue
+
+        motion_code = f"G{motion.group('kind')}"
+        z_value = float(z_match.group("value"))
+        ending = _line_ending(line)
+        if motion_code in engrave_codes and abs(z_value - engrave_z) <= tolerance:
+            result.append(line)
+            result.append(
+                f"SET_PIN PIN={pin_name} VALUE={_format_number(power)}{ending}"
+            )
+        elif motion_code in travel_codes and abs(z_value - travel_z) <= tolerance:
+            result.append(f"SET_PIN PIN={pin_name} VALUE=0{ending}")
             result.append(line)
         else:
             result.append(line)
     return result
 
+
 inject_laser_power_on_z_moves.plugin_meta = {
-    "label":       "Inject laser power on Z transitions",
-    "description": (
-        "Turns the laser on after each engrave-depth descent and "
-        "off before each travel lift."
-    ),
+    "label": "Switch laser power on Z transitions",
+    "description": "Uses configurable heights, motion types, tolerance, pin name, and power.",
 }
 
 
-# ── New-style Payload example ──────────────────────────────────────────────
-# This function uses the full Payload signature to read and write metadata
-# alongside the file content.  The loader detects the Payload annotation and
-# does NOT wrap it.
-
-def count_laser_on_segments(payload: "Payload") -> "Payload":
-    """
-    Count how many times the laser fires (SET_PIN PIN=laser VALUE>0) and store
-    the result in payload.meta["laser_segment_count"] for downstream steps or
-    for display in the console log.
-    """
-    count = sum(
-        1 for line in payload.data
-        if "SET_PIN PIN=laser VALUE=" in line
-        and not line.strip().endswith("VALUE=0")
+def count_laser_on_segments(payload: "Payload", pin_name="laser") -> "Payload":
+    """Count positive SET_PIN values for a configurable pin."""
+    pattern = re.compile(
+        rf"\bSET_PIN\s+PIN={re.escape(pin_name)}\s+VALUE=(?P<value>{_NUMBER})\b",
+        re.IGNORECASE,
     )
+    count = 0
+    for line in payload.data:
+        match = pattern.search(_code_part(line))
+        if match and float(match.group("value")) > 0:
+            count += 1
     payload.meta["laser_segment_count"] = count
-    # Append a comment to the file so the count is visible in the output
     payload.data = payload.data + [f"; laser segments fired: {count}\n"]
     return payload
 
+
 count_laser_on_segments.plugin_meta = {
-    "label":       "Count laser-on segments",
-    "description": (
-        "Counts SET_PIN laser VALUE>0 occurrences, stores the result in "
-        "payload.meta['laser_segment_count'], and appends it as a comment."
-    ),
+    "label": "Count laser-on segments",
+    "description": "Counts positive SET_PIN values for a configurable pin and records the result.",
 }
 
 
-# ── Grid tiling ────────────────────────────────────────────────────────────
-
-def _shift_body(body, dx=0.0, dy=0.0, dz=0.0):
-    """Shift every G0/G1/G2/G3 X, Y, and Z coordinate in a body block."""
+def _shift_body(body, dx=0.0, dy=0.0, dz=0.0, decimal_places=3):
     if dx == 0 and dy == 0 and dz == 0:
-        return body # fast path
+        return list(body)
 
+    offsets = {"X": dx, "Y": dy, "Z": dz}
     shifted = []
-    coord_pat = re.compile(r'([XYZ])(-?\d+(?:\.\d+)?)')
-
     for line in body:
-        s = line.lstrip()
-        # only touch motion commands – leave comments, M-codes, SET_PIN alone
-        if s.startswith(('G0', 'G1', 'G2', 'G3')):
-            def repl(m):
-                axis, val = m.group(1), float(m.group(2))
-                if axis == 'X':
-                    val += dx
-                elif axis == 'Y':
-                    val += dy
-                else: # Z
-                    val += dz
-                # keep 3 decimals, strip trailing zeros to match typical gcode style
-                return f"{axis}{val:.3f}".rstrip('0').rstrip('.')
-            line = coord_pat.sub(repl, line)
-        shifted.append(line)
+        code, separator, comment = line.partition(";")
+        if _MOTION_PATTERN.match(code):
+
+            def replace_coordinate(match):
+                axis = match.group("axis")
+                value = float(match.group("value")) + offsets[axis.upper()]
+                return f"{axis}{_format_number(value, decimal_places)}"
+
+            code = _COORD_PATTERN.sub(replace_coordinate, code)
+        shifted.append(code + (separator + comment if separator else ""))
     return shifted
 
-def offset_gcode(lines, dx=0.0, dy=0.0, dz=0.0):
-    """
-    lines — list[str], the input file split into lines, with newlines preserved.
-    dx, dy, dz — amounts to add to every X, Y, Z coordinate.
 
-    Return — list[str], the transformed content.
-    Run this as a standalone step, or call _shift_body() from other plugins.
-    """
-    return _shift_body(lines, dx, dy, dz)
+def offset_gcode(lines, dx=0.0, dy=0.0, dz=0.0, decimal_places=3):
+    """Offset motion coordinates without touching comments or non-motion commands."""
+    return _shift_body(lines, dx, dy, dz, decimal_places)
 
-def _apply_settings(body, speed=None, power=None):
-    """Replace feed rate (F) and active laser power in a body block."""
+
+offset_gcode.plugin_meta = {
+    "label": "Offset G-code coordinates",
+    "description": "Offsets X, Y, and Z on G0-G3 moves with configurable precision.",
+}
+
+
+def _apply_settings(body, speed=None, power=None, pin_name="laser"):
+    feed_pattern = re.compile(rf"(?<![A-Z])F{_NUMBER}\b", re.IGNORECASE)
+    power_pattern = re.compile(
+        rf"(\bSET_PIN\s+PIN={re.escape(pin_name)}\s+VALUE=)(?P<value>{_NUMBER})\b",
+        re.IGNORECASE,
+    )
     result = []
     for line in body:
-        s = line.strip()
-        if speed is not None and s.startswith('G1') and re.search(r'[XY]', s) and 'Z' not in s:
-            line = re.sub(r'F(-?\d+(?:\.\d+)?)', f'F{speed}', line)
-        if power is not None and 'SET_PIN PIN=laser VALUE=' in s and not s.endswith('VALUE=0'):
-            line = re.sub(r'(SET_PIN PIN=laser VALUE=)\S+', f'\\g<1>{power}', line)
+        code = _code_part(line)
+        if speed is not None and re.match(r"^\s*G0?1\b", code, re.IGNORECASE):
+            line = feed_pattern.sub(f"F{_format_number(speed)}", line)
+        if power is not None:
+
+            def replace_power(match):
+                if float(match.group("value")) <= 0:
+                    return match.group(0)
+                return f"{match.group(1)}{_format_number(power)}"
+
+            line = power_pattern.sub(replace_power, line)
         result.append(line)
     return result
 
 
-def make_laser_grid(lines, pcb_width=80.0, pcb_height=100.0, gap=2.0, max_copies=0, skip_first_n=0,
-                    speed_min=None, speed_max=None, speed_step=None,
-                    power_min=None, power_max=None, power_step=None):
-    """
-    Tile the laser artwork in a grid to fill the PCB and bake shifted coordinates
-    into one file.
+def _range_list(minimum, maximum, step, label):
+    provided = [value for value in (minimum, maximum, step) if value is not None]
+    if not provided:
+        return None
+    if len(provided) != 3:
+        raise ValueError(f"{label}: set min, max, and step together")
+    if step <= 0 or minimum > maximum:
+        raise ValueError(f"{label}: require step > 0 and min <= max")
+    count = int((maximum - minimum) / step + 1e-9) + 1
+    if count > 10000:
+        raise ValueError(f"{label}: range produces too many values")
+    return [minimum + index * step for index in range(count)]
 
-    Run this step AFTER add_laser_header_footer and inject_laser_power_on_z_moves.
-    Auto-detects artwork extents from G0/G1 X/Y values in the body, computes
-    cols = floor(abs(pcb_width) / (art_width + gap)) and the same for rows.
-    The sign of pcb_width/pcb_height controls the tiling direction (negative = tile
-    toward lower coordinates).
-    max_copies: if > 0, caps the total number of tiles produced (0 = unlimited).
-    skip_first_n: skips the first N generated duplicate positions in the grid layout.
 
-    Speed test range (varies across columns, left to right):
-      speed_min, speed_max, speed_step — F feed-rate values in mm/min.
-      When set, cols is overridden to match the number of speed steps.
-
-    Power test range (varies across rows, bottom to top):
-      power_min, power_max, power_step — laser power values (0.0–1.0).
-      When set, rows is overridden to match the number of power steps.
-    """
-    # Build speed/power sequences from ranges, if provided
-    def _range_list(mn, mx, step, label):
-        provided = [x for x in (mn, mx, step) if x is not None]
-        if not provided:
-            return None
-        if len(provided) != 3:
-            raise ValueError(f"{label}: must set all three of min, max, and step, or none of them")
-        if step <= 0:
-            raise ValueError(f"{label}_step must be > 0 (got {step})")
-        if mn > mx:
-            raise ValueError(f"{label}_min ({mn}) must be ≤ {label}_max ({mx})")
-        n = round((mx - mn) / step) + 1
-        return [mn + i * step for i in range(n)]
+def make_laser_grid(
+    lines,
+    pcb_width=80.0,
+    pcb_height=100.0,
+    gap=2.0,
+    max_copies=0,
+    skip_first_n=0,
+    speed_min=None,
+    speed_max=None,
+    speed_step=None,
+    power_min=None,
+    power_max=None,
+    power_step=None,
+    header_end_command="GRAB_LASER",
+    footer_start_command="M5",
+    pin_name="laser",
+    decimal_places=3,
+    max_generated_tiles=10000,
+):
+    """Tile a detected motion body across a configurable work area."""
+    if gap < 0:
+        raise ValueError("gap must be non-negative")
+    if max_copies < 0 or skip_first_n < 0:
+        raise ValueError("max_copies and skip_first_n must be non-negative")
+    if max_generated_tiles <= 0:
+        raise ValueError("max_generated_tiles must be positive")
 
     speeds = _range_list(speed_min, speed_max, speed_step, "speed")
     powers = _range_list(power_min, power_max, power_step, "power")
+    if powers is not None and any(power < 0 for power in powers):
+        raise ValueError("power range values must be non-negative")
 
-    # Locate header end (line after GRAB_LASER)
-    header_end = 0
-    for i, line in enumerate(lines):
-        if line.strip() == 'GRAB_ENDMILL':
-            header_end = i + 1
-            break
-
-    # Footer is always the last 3 fixed lines added by add_laser_header_footer
-    if (len(lines) >= 3
-            and lines[-1].strip() == 'TOOL_DROPOFF'
-            and lines[-2].strip() == 'HOME_XY'
-            and lines[-3].strip() == 'SET_PIN PIN=end_mill VALUE=0'):
-        footer_start = len(lines) - 3
-    else:
-        footer_start = len(lines)
+    header_match = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _has_command(line, header_end_command)
+        ),
+        None,
+    )
+    header_end = header_match + 1 if header_match is not None else 0
+    footer_matches = [
+        index
+        for index in range(header_end, len(lines))
+        if _has_command(lines[index], footer_start_command)
+    ]
+    footer_start = footer_matches[-1] if footer_matches else len(lines)
 
     header = lines[:header_end]
-    body   = lines[header_end:footer_start]
+    body = lines[header_end:footer_start]
     footer = lines[footer_start:]
 
-    # Auto-detect artwork extents
-    x_vals, y_vals = [], []
+    x_values = []
+    y_values = []
     for line in body:
-        s = line.strip()
-        if s.startswith('G0') or s.startswith('G1'):
-            for m in re.finditer(r'X(-?\d+(?:\.\d+)?)', s):
-                x_vals.append(float(m.group(1)))
-            for m in re.finditer(r'Y(-?\d+(?:\.\d+)?)', s):
-                y_vals.append(float(m.group(1)))
+        code = _code_part(line)
+        if not _MOTION_PATTERN.match(code):
+            continue
+        for match in _COORD_PATTERN.finditer(code):
+            if match.group("axis").upper() == "X":
+                x_values.append(float(match.group("value")))
+            elif match.group("axis").upper() == "Y":
+                y_values.append(float(match.group("value")))
 
-    if not x_vals or not y_vals:
+    if not x_values or not y_values:
         return lines
 
-    art_w = max(x_vals) - min(x_vals)
-    art_h = max(y_vals) - min(y_vals)
+    art_width = max(x_values) - min(x_values)
+    art_height = max(y_values) - min(y_values)
+    pitch_x = art_width + gap
+    pitch_y = art_height + gap
+    if pitch_x <= 0 or pitch_y <= 0:
+        raise ValueError("Artwork size plus gap must be positive on both axes")
 
-    # Use abs() for count, sign for direction; ranges override pcb-derived counts
-    dir_x = -1.0 if pcb_width < 0 else 1.0
-    dir_y = -1.0 if pcb_height < 0 else 1.0
-    cols = len(speeds) if speeds is not None else max(1, int(abs(pcb_width)  / (art_w + gap)))
-    rows = len(powers) if powers is not None else max(1, int(abs(pcb_height) / (art_h + gap)))
+    direction_x = -1.0 if pcb_width < 0 else 1.0
+    direction_y = -1.0 if pcb_height < 0 else 1.0
+    columns = (
+        len(speeds) if speeds is not None else max(1, int(abs(pcb_width) / pitch_x))
+    )
+    rows = len(powers) if powers is not None else max(1, int(abs(pcb_height) / pitch_y))
+    requested_tiles = columns * rows
+    effective_tiles = (
+        min(requested_tiles, max_copies) if max_copies > 0 else requested_tiles
+    )
+    if effective_tiles > max_generated_tiles:
+        raise ValueError(
+            f"Grid would produce {effective_tiles} tiles; limit is {max_generated_tiles}"
+        )
 
-    new_body = []
-    generated_count = 0
-    produced_count = 0
-
+    tiled_body = []
+    generated = 0
+    produced = 0
     for row in range(rows):
-        for col in range(cols):
-            if max_copies > 0 and produced_count >= max_copies:
+        for column in range(columns):
+            if max_copies > 0 and produced >= max_copies:
                 break
-
-            if generated_count < skip_first_n:
-                generated_count += 1
+            if generated < skip_first_n:
+                generated += 1
                 continue
 
-            dx = col * (art_w + gap) * dir_x
-            dy = row * (art_h + gap) * dir_y
-
-            tile = body if (dx == 0.0 and dy == 0.0) else _shift_body(body, dx, dy)
-            if speeds is not None or powers is not None:
-                spd = speeds[col] if speeds is not None else None
-                pwr = powers[row] if powers is not None else None
-                tile = _apply_settings(tile, speed=spd, power=pwr)
-            new_body.extend(tile)
-
-            generated_count += 1
-            produced_count += 1
-
-        if max_copies > 0 and produced_count >= max_copies:
+            tile = _shift_body(
+                body,
+                column * pitch_x * direction_x,
+                row * pitch_y * direction_y,
+                decimal_places,
+            )
+            tile = _apply_settings(
+                tile,
+                speed=speeds[column] if speeds is not None else None,
+                power=powers[row] if powers is not None else None,
+                pin_name=pin_name,
+            )
+            tiled_body.extend(tile)
+            generated += 1
+            produced += 1
+        if max_copies > 0 and produced >= max_copies:
             break
 
-    return header + new_body + footer
+    return header + tiled_body + footer
+
 
 make_laser_grid.plugin_meta = {
-    "label":       "Tile grid — fill PCB",
+    "label": "Tile G-code across a work area",
     "description": (
-        "Duplicates the laser body in a grid that fills the PCB. "
-        "Negative pcb_width/pcb_height tiles toward lower coordinates. "
-        "max_copies caps total tiles (0 = unlimited). "
-        "skip_first_n skips the first N grid positions. "
-        "Speed test (columns): set speed_min, speed_max, speed_step (mm/min) — overrides col count. "
-        "Power test (rows): set power_min, power_max, power_step (0.0–1.0) — overrides row count. "
-        "Coordinates are baked in; no Klipper macro changes needed. "
-        "Run after 'Add laser header + footer' and 'Inject laser power on Z transitions'."
+        "Tiles a detected G-code body while preserving configurable wrappers. "
+        "Work-area direction, copies, offsets, speed tests, and power tests are configurable."
     ),
 }

@@ -1,15 +1,24 @@
 [
     {
         "pluginKey": "laser_utils.remove_flatcam_preamble",
-        "description": "",
+        "description": "Extract content between configured FlatCAM markers",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "start_command": "M106",
+            "end_command": "M107",
+            "keep_start_command": false,
+            "keep_end_command": false,
+            "require_markers": true
+        }
     },
     {
-        "pluginKey": "endmill_utils.convert_g01_g00_to_g1_2decimals",
-        "description": "Normalize G00/G01 -> G1, round coords to 2 decimal places",
+        "pluginKey": "endmill_utils.normalize_gcode_format",
+        "description": "Normalize formatting while preserving rapid and linear moves",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "decimal_places": 2,
+            "normalize_leading_zeros": true
+        }
     },
     {
         "pluginKey": "laser_utils.inject_laser_power_on_z_moves",
@@ -18,24 +27,46 @@
         "args": {
             "power": 0.3,
             "engrave_z": 0,
-            "travel_z": 1
+            "travel_z": 1,
+            "pin_name": "laser",
+            "tolerance": 0.0001,
+            "engrave_motion_codes": "G1",
+            "travel_motion_codes": "G0|G1"
         }
     },
     {
         "pluginKey": "laser_utils.add_laser_header_footer",
-        "description": "Wrap with HOME_PRINTER + GRAB_LASER header and shutdown footer",
+        "description": "Add configured laser setup and shutdown commands",
         "isChecked": true,
-        "args": {}
+        "args": {
+            "home_command": "HOME_PRINTER",
+            "tool_command": "GRAB_LASER",
+            "shutdown_command": "M5",
+            "finish_home_command": "HOME_XY",
+            "release_command": "TOOL_DROPOFF"
+        }
     },
     {
         "pluginKey": "laser_utils.make_laser_grid",
-        "description": "This tiles on the ne",
+        "description": "Tile the detected body within the configured work area",
         "isChecked": true,
         "args": {
             "pcb_width": -80,
             "pcb_height": -100,
             "gap": 2,
-            "max_copies": 6
+            "max_copies": 6,
+            "skip_first_n": 0,
+            "speed_min": null,
+            "speed_max": null,
+            "speed_step": null,
+            "power_min": null,
+            "power_max": null,
+            "power_step": null,
+            "header_end_command": "GRAB_LASER",
+            "footer_start_command": "M5",
+            "pin_name": "laser",
+            "decimal_places": 3,
+            "max_generated_tiles": 10000
         }
     }
 ]
