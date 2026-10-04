@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kit_version": "2026.08.1",
+  "managed_mechanics": {
+    "helper_scripts/PMT/context_pack.py": "3cc222d5434a4ed92c661322b14de9987d4204976c039a1e1dd46e03c86a11ad",
+    "helper_scripts/PMT/doctor.py": "3a0e2ec10377b81b463e70ef4efe81aaadf804282e543fc5fa0d3729fd889219",
+    "helper_scripts/PMT/execution_receipts.py": "838e6eb766d914f1b0bb5fb41f362218b2bd9efb81a7fa3eaf635c28491fc1e6",
+    "helper_scripts/PMT/executor_registry.json": "56363a11dfe37f62720e65781817ab5830c7e6d6991606684277939f58edd5e0",
+    "helper_scripts/PMT/executor_registry.py": "1411ef32c3abb10fa68419af2ff70b3eeb704689c88608448b75b6e386ea096b",
+    "helper_scripts/PMT/gui_theme.py": "2325268a263fa51b058fc2ca7799cef35d4e165be62f9a7e807e9f62da53335b",
+    "helper_scripts/PMT/pack_delivery.py": "41780d1e3b95338327920bc82bd6b819050b0e2fd9523807206e9fef084c9055",
+    "helper_scripts/PMT/pack_task.py": "04877fb621402297deb37a66ea6bbf34fc545acd9e628aeea0ef164d73c306d9",
+    "helper_scripts/PMT/query_model.py": "d208a04570765e1b15bc520cf46a2b09c3f35999ea0e8eeaf18bb435e4060b56",
+    "helper_scripts/PMT/route_tasks.py": "d65f166993b46513f19cd5a55e37b4068a1633eef4d311c097cf289882b36126",
+    "helper_scripts/PMT/task_editor.py": "81f8d885f1ceb00d4dca22b6c3d66c0f4bd3da5ceffffef5c82fee47adbddd78",
+    "helper_scripts/PMT/task_records.py": "81ffd02147abddc7fc4232eec0c6884f5280d456603393b6d712330ecc85a24c",
+    "helper_scripts/PMT/dashboard.py": "269c5e88ece909ad1361d6c473e343eeccf3b52d86c7f42155b93f67f743d8b0"
+  }
+}
